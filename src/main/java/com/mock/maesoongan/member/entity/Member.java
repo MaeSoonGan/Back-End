@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -55,6 +56,9 @@ public class Member extends BaseTimeEntity {
     @Column(nullable = false, length = 20)
     private MemberStatus status;
 
+    @Column(name = "total_asset", precision = 18, scale = 2)
+    private BigDecimal totalAsset;
+
     private Member(String loginId, String password, String email, String nickname, String phone) {
         this.loginId = loginId;
         this.password = password;
@@ -64,6 +68,7 @@ public class Member extends BaseTimeEntity {
         this.loginFailCount = 0;
         this.emailVerified = false;
         this.status = MemberStatus.ACTIVE;
+        this.totalAsset = BigDecimal.ZERO;
     }
 
     public static Member create(String loginId, String password, String email, String nickname, String phone) {
@@ -94,5 +99,15 @@ public class Member extends BaseTimeEntity {
     public void changePassword(String password) {
         this.password = password;
         resetLoginFailCount();
+    }
+
+    public void suspend() {
+        this.status = MemberStatus.SUSPENDED;
+        this.lockedAt = LocalDateTime.now();
+    }
+
+    public void paySeedMoney(BigDecimal seedAmount) {
+        BigDecimal currentAsset = totalAsset == null ? BigDecimal.ZERO : totalAsset;
+        this.totalAsset = currentAsset.add(seedAmount);
     }
 }
