@@ -1,5 +1,6 @@
 package com.mock.maesoongan.common;
 
+import com.mock.maesoongan.admin.dashboard.AdminDashboardController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -7,8 +8,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
-@RestControllerAdvice
-public class GlobalExceptionHandler {
+@RestControllerAdvice(assignableTypes = AdminDashboardController.class)
+public class DashboardExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
