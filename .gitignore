@@ -41,6 +41,7 @@ src/main/resources/application-secret.properties
 *.env
 application-secret.properties
 bootrun-*.log
+*.log
 
 ### Secrets / credentials ###
 **/application-secret.properties
