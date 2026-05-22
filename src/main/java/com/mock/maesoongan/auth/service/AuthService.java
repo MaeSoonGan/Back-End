@@ -19,15 +19,17 @@ import com.mock.maesoongan.auth.infra.EmailCodeSender;
 import com.mock.maesoongan.auth.infra.JwtTokenProvider;
 import com.mock.maesoongan.auth.infra.VerificationCodeStore;
 import com.mock.maesoongan.common.exception.BusinessException;
-import com.mock.maesoongan.member.entity.Member;
-import com.mock.maesoongan.member.repository.MemberRepository;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +42,7 @@ public class AuthService {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
 
-    private final MemberRepository memberRepository;
+    private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final VerificationCodeStore verificationCodeStore;
@@ -48,29 +50,29 @@ public class AuthService {
 
     @Transactional
     public TokenResponse login(LoginRequest request) {
-        Member member = memberRepository.findByLoginId(request.userId())
+        AuthMember member = findByLoginId(request.userId())
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid userId or password."));
 
         if (member.isLocked()) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "Account is locked.");
         }
 
-        if (!passwordEncoder.matches(request.password(), member.getPassword())) {
-            member.increaseLoginFailCount();
+        if (!passwordMatches(request.password(), member.passwordHash())) {
+            increaseLoginFailCount(member.memberId(), member.loginFailCount());
             throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid userId or password.");
         }
 
-        member.resetLoginFailCount();
+        resetLoginFailCount(member.memberId());
         return new TokenResponse(
-                jwtTokenProvider.createAccessToken(member.getLoginId()),
-                jwtTokenProvider.createRefreshToken(member.getLoginId(), request.keepLoginValue())
+                jwtTokenProvider.createAccessToken(member.loginId()),
+                jwtTokenProvider.createRefreshToken(member.loginId(), request.keepLoginValue())
         );
     }
 
     @Transactional(readOnly = true)
     public AvailabilityResponse checkId(String userId) {
         validateUserId(userId);
-        return new AvailabilityResponse(!memberRepository.existsByLoginId(userId));
+        return new AvailabilityResponse(!exists("select count(*) from member_snapshot where login_id = ?", userId));
     }
 
     @Transactional(readOnly = true)
@@ -78,16 +80,16 @@ public class AuthService {
         if (nickname == null || nickname.length() < 2 || nickname.length() > 10) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Nickname must be 2 to 10 characters.");
         }
-        return new AvailabilityResponse(!memberRepository.existsByNickname(nickname));
+        return new AvailabilityResponse(!exists("select count(*) from member_snapshot where nickname = ?", nickname));
     }
 
     @Transactional(readOnly = true)
     public ExpiresInResponse sendEmailCode(SendEmailCodeRequest request) {
-        if (SIGNUP.equals(request.purpose()) && memberRepository.existsByEmail(request.email())) {
+        if (SIGNUP.equals(request.purpose()) && exists("select count(*) from member_snapshot where email = ?", request.email())) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
         }
         if ((FIND_ID.equals(request.purpose()) || RESET_PASSWORD.equals(request.purpose()))
-                && !memberRepository.existsByEmail(request.email())) {
+                && !exists("select count(*) from member_snapshot where email = ?", request.email())) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered.");
         }
 
@@ -117,50 +119,66 @@ public class AuthService {
         if (!verificationCodeStore.isSignupEmailVerified(request.email())) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "Email verification is required.");
         }
-        if (memberRepository.existsByLoginId(request.userId())) {
+        if (exists("select count(*) from member_snapshot where login_id = ?", request.userId())) {
             throw new BusinessException(HttpStatus.CONFLICT, "UserId is already in use.");
         }
-        if (memberRepository.existsByEmail(request.email())) {
+        if (exists("select count(*) from member_snapshot where email = ?", request.email())) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
         }
-        if (memberRepository.existsByNickname(request.nickname())) {
+        if (exists("select count(*) from member_snapshot where nickname = ?", request.nickname())) {
             throw new BusinessException(HttpStatus.CONFLICT, "Nickname is already in use.");
         }
 
-        Member member = Member.create(
+        long memberId = nextMemberId();
+        LocalDateTime now = LocalDateTime.now();
+        jdbcTemplate.update("""
+                        insert into member_snapshot
+                        (member_id, login_id, email, nickname, phone, status, login_fail_count, email_verified,
+                         profile_image_url, created_at, updated_at, synced_at)
+                        values (?, ?, ?, ?, ?, 'ACTIVE', 0, true, null, ?, null, ?)
+                        """,
+                memberId,
                 request.userId(),
-                passwordEncoder.encode(request.password()),
                 request.email(),
                 request.nickname(),
-                request.phone()
-        );
-        member.verifyEmail();
-        Member saved = memberRepository.save(member);
-        return new RegisterResponse(saved.getLoginId(), saved.getNickname(), saved.getEmail());
+                request.phone(),
+                now,
+                now);
+        jdbcTemplate.update("""
+                        insert into dev_member_auth
+                        (member_id, password_hash, password_updated_at, login_fail_count, locked_until, created_at, updated_at)
+                        values (?, ?, ?, 0, null, ?, null)
+                        """,
+                memberId,
+                passwordEncoder.encode(request.password()),
+                now,
+                now);
+
+        return new RegisterResponse(request.userId(), request.nickname(), request.email());
     }
 
     @Transactional(readOnly = true)
     public FindIdResponse findId(FindIdRequest request) {
         verificationCodeStore.verify(EMAIL, request.email(), FIND_ID, request.code());
-        Member member = memberRepository.findByEmail(request.email())
+        AuthMember member = findByEmail(request.email())
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered."));
 
         return new FindIdResponse(
-                maskUserId(member.getLoginId()),
-                maskEmail(member.getEmail()),
-                member.getCreatedAt().format(DATE_FORMAT)
+                maskUserId(member.loginId()),
+                maskEmail(member.email()),
+                member.createdAt().format(DATE_FORMAT)
         );
     }
 
     @Transactional(readOnly = true)
     public VerifyResetResponse verifyReset(VerifyResetRequest request) {
         verificationCodeStore.verify(EMAIL, request.email(), RESET_PASSWORD, request.code());
-        Member member = memberRepository.findByLoginIdAndNicknameAndEmail(request.userId(), request.name(), request.email())
+        AuthMember member = findByLoginIdAndNicknameAndEmail(request.userId(), request.name(), request.email())
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "No matching user found."));
 
         return new VerifyResetResponse(
-                jwtTokenProvider.createResetToken(member.getLoginId()),
-                maskUserId(member.getLoginId())
+                jwtTokenProvider.createResetToken(member.loginId()),
+                maskUserId(member.loginId())
         );
     }
 
@@ -171,16 +189,139 @@ public class AuthService {
         }
 
         String userId = jwtTokenProvider.validateResetToken(request.resetToken());
-        Member member = memberRepository.findByLoginId(userId)
+        AuthMember member = findByLoginId(userId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid reset token."));
 
-        if (passwordEncoder.matches(request.newPassword(), member.getPassword())) {
+        if (passwordMatches(request.newPassword(), member.passwordHash())) {
             throw new BusinessException(HttpStatus.CONFLICT, "New password must be different from the old password.");
         }
 
         LocalDateTime changedAt = LocalDateTime.now();
-        member.changePassword(passwordEncoder.encode(request.newPassword()));
-        return new ResetPasswordResponse(maskUserId(member.getLoginId()), changedAt.format(DATE_TIME_FORMAT));
+        jdbcTemplate.update("""
+                        update dev_member_auth
+                        set password_hash = ?, password_updated_at = ?, login_fail_count = 0, locked_until = null, updated_at = ?
+                        where member_id = ?
+                        """,
+                passwordEncoder.encode(request.newPassword()),
+                changedAt,
+                changedAt,
+                member.memberId());
+        jdbcTemplate.update("""
+                        update member_snapshot
+                        set login_fail_count = 0, status = 'ACTIVE', updated_at = ?, synced_at = ?
+                        where member_id = ?
+                        """,
+                changedAt,
+                changedAt,
+                member.memberId());
+
+        return new ResetPasswordResponse(maskUserId(member.loginId()), changedAt.format(DATE_TIME_FORMAT));
+    }
+
+    private java.util.Optional<AuthMember> findByLoginId(String loginId) {
+        return findOne("""
+                select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
+                       ms.created_at, dma.password_hash, dma.locked_until
+                from member_snapshot ms
+                join dev_member_auth dma on dma.member_id = ms.member_id
+                where ms.login_id = ?
+                """, loginId);
+    }
+
+    private java.util.Optional<AuthMember> findByEmail(String email) {
+        return findOne("""
+                select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
+                       ms.created_at, dma.password_hash, dma.locked_until
+                from member_snapshot ms
+                join dev_member_auth dma on dma.member_id = ms.member_id
+                where ms.email = ?
+                """, email);
+    }
+
+    private java.util.Optional<AuthMember> findByLoginIdAndNicknameAndEmail(String loginId, String nickname, String email) {
+        return findOne("""
+                select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
+                       ms.created_at, dma.password_hash, dma.locked_until
+                from member_snapshot ms
+                join dev_member_auth dma on dma.member_id = ms.member_id
+                where ms.login_id = ? and ms.nickname = ? and ms.email = ?
+                """, loginId, nickname, email);
+    }
+
+    private java.util.Optional<AuthMember> findOne(String sql, Object... args) {
+        try {
+            return java.util.Optional.ofNullable(jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new AuthMember(
+                    rs.getLong("member_id"),
+                    rs.getString("login_id"),
+                    rs.getString("email"),
+                    rs.getString("nickname"),
+                    rs.getString("status"),
+                    rs.getInt("login_fail_count"),
+                    toLocalDateTime(rs.getTimestamp("created_at")),
+                    rs.getString("password_hash"),
+                    toLocalDateTime(rs.getTimestamp("locked_until"))
+            ), args));
+        } catch (EmptyResultDataAccessException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private boolean passwordMatches(String rawPassword, String storedPassword) {
+        if (storedPassword != null && storedPassword.startsWith("{noop}")) {
+            return rawPassword.equals(storedPassword.substring("{noop}".length()));
+        }
+        return storedPassword != null && passwordEncoder.matches(rawPassword, storedPassword);
+    }
+
+    private void increaseLoginFailCount(long memberId, int currentFailCount) {
+        int nextFailCount = currentFailCount + 1;
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime lockedUntil = nextFailCount >= 5 ? now.plusMinutes(30) : null;
+        String status = nextFailCount >= 5 ? "SUSPENDED" : "ACTIVE";
+
+        jdbcTemplate.update("""
+                        update dev_member_auth
+                        set login_fail_count = ?, locked_until = ?, updated_at = ?
+                        where member_id = ?
+                        """,
+                nextFailCount,
+                lockedUntil,
+                now,
+                memberId);
+        jdbcTemplate.update("""
+                        update member_snapshot
+                        set login_fail_count = ?, status = ?, updated_at = ?, synced_at = ?
+                        where member_id = ?
+                        """,
+                nextFailCount,
+                status,
+                now,
+                now,
+                memberId);
+    }
+
+    private void resetLoginFailCount(long memberId) {
+        LocalDateTime now = LocalDateTime.now();
+        jdbcTemplate.update("""
+                        update dev_member_auth
+                        set login_fail_count = 0, locked_until = null, updated_at = ?
+                        where member_id = ?
+                        """, now, memberId);
+        jdbcTemplate.update("""
+                        update member_snapshot
+                        set login_fail_count = 0, updated_at = ?, synced_at = ?
+                        where member_id = ?
+                        """, now, now, memberId);
+    }
+
+    private boolean exists(String sql, Object... args) {
+        Long count = jdbcTemplate.queryForObject(sql, Long.class, args);
+        return count != null && count > 0;
+    }
+
+    private long nextMemberId() {
+        Long value = jdbcTemplate.queryForObject("select coalesce(max(member_id), 0) + 1 from member_snapshot", Long.class);
+        return value == null ? 1 : value;
     }
 
     private void validateUserId(String userId) {
@@ -205,5 +346,25 @@ public class AuthService {
         String domain = email.substring(atIndex);
         int visibleLength = Math.min(4, localPart.length() - 1);
         return localPart.substring(0, visibleLength) + "***" + domain;
+    }
+
+    private LocalDateTime toLocalDateTime(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toLocalDateTime();
+    }
+
+    private record AuthMember(
+            long memberId,
+            String loginId,
+            String email,
+            String nickname,
+            String status,
+            int loginFailCount,
+            LocalDateTime createdAt,
+            String passwordHash,
+            LocalDateTime lockedUntil
+    ) {
+        boolean isLocked() {
+            return "SUSPENDED".equals(status) || (lockedUntil != null && lockedUntil.isAfter(LocalDateTime.now()));
+        }
     }
 }
