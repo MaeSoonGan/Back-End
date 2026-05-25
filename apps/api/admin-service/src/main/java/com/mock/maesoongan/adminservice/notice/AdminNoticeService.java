@@ -197,16 +197,21 @@ public class AdminNoticeService {
         ensureNoticeExists(noticeId);
         jdbcTemplate.update("""
                 update notice
-                set status = 'HIDDEN',
+                set status = 'DELETED',
                     updated_at = ?
                 where id = ?
                 """, LocalDateTime.now(), noticeId);
-        insertAudit(currentAdminId(), "DELETE_NOTICE", "NOTICE", noticeId, "Hide notice");
-        return new NoticeMutationResponse(noticeId, "HIDDEN", "Notice hidden");
+        insertAudit(currentAdminId(), "DELETE_NOTICE", "NOTICE", noticeId, "Delete notice");
+        return new NoticeMutationResponse(noticeId, "DELETED", "Notice deleted");
     }
 
     private NoticeFilter noticeFilter(String keyword, String status) {
-        String normalizedStatus = normalizeStatus(status, List.of("ALL", "PUBLISHED", "SCHEDULED", "HIDDEN"), "notice status", "ALL");
+        String normalizedStatus = normalizeStatus(
+                status,
+                List.of("ALL", "PUBLISHED", "SCHEDULED", "HIDDEN", "DRAFT", "DELETED"),
+                "notice status",
+                "ALL"
+        );
         String normalizedKeyword = normalize(keyword);
         List<String> conditions = new ArrayList<>();
         List<Object> args = new ArrayList<>();
@@ -228,9 +233,14 @@ public class AdminNoticeService {
     }
 
     private String resolveStatus(String requestedStatus, LocalDateTime startAt) {
-        String normalized = normalizeStatus(requestedStatus, List.of("PUBLISHED", "SCHEDULED", "HIDDEN"), "notice status", null);
-        if ("HIDDEN".equals(normalized)) {
-            return "HIDDEN";
+        String normalized = normalizeStatus(
+                requestedStatus,
+                List.of("PUBLISHED", "SCHEDULED", "HIDDEN", "DRAFT"),
+                "notice status",
+                null
+        );
+        if ("HIDDEN".equals(normalized) || "DRAFT".equals(normalized)) {
+            return normalized;
         }
         return startAt.isAfter(LocalDateTime.now()) ? "SCHEDULED" : "PUBLISHED";
     }
