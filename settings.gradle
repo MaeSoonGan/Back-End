@@ -1,2 +1,3 @@
 rootProject.name = 'MaeSoonGan'
 include 'apps:api:admin-service'
+include 'apps:api:notification-api'
