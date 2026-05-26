@@ -232,3 +232,13 @@ GET /api/market/ranking?type=invalid        -> 400 BAD_REQUEST
 ```powershell
 .\gradlew.bat :apps:api:market-service:bootJar
 ```
+
+## Docker 이미지 빌드
+
+EKS 배포용 컨테이너 이미지는 레포지토리 루트에서 아래 명령으로 빌드합니다.
+
+```powershell
+docker build -f apps/api/market-service/Dockerfile -t maesoongan-market-service .
+```
+
+컨테이너 내부 기본 포트는 `8085`입니다.
