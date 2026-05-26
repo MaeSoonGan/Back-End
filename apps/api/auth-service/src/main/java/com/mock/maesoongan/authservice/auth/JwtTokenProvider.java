@@ -1,10 +1,11 @@
-package com.mock.maesoongan.auth.infra;
+package com.mock.maesoongan.authservice.auth;
 
-import com.mock.maesoongan.common.exception.BusinessException;
+import com.mock.maesoongan.authservice.common.BusinessException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
+import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,17 +31,25 @@ public class JwtTokenProvider {
         return createToken(subject, "refresh", keepLogin ? 60L * 60 * 24 * 30 : 60L * 60 * 24 * 7);
     }
 
+    public String validateRefreshToken(String refreshToken) {
+        Map<String, Object> claims = parse(refreshToken, "Invalid refresh token.");
+        if (!"refresh".equals(claims.get("typ"))) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid refresh token.");
+        }
+        return String.valueOf(claims.get("sub"));
+    }
+
     public String createResetToken(String subject) {
         return "rst_" + createToken(subject, "reset", 600);
     }
 
     public String validateResetToken(String resetToken) {
         if (resetToken == null || !resetToken.startsWith("rst_")) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "유효하지 않은 재설정 토큰입니다.");
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid reset token.");
         }
-        Map<String, Object> claims = parse(resetToken.substring(4));
+        Map<String, Object> claims = parse(resetToken.substring(4), "Invalid reset token.");
         if (!"reset".equals(claims.get("typ"))) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "유효하지 않은 재설정 토큰입니다.");
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid reset token.");
         }
         return String.valueOf(claims.get("sub"));
     }
@@ -50,16 +59,17 @@ public class JwtTokenProvider {
             long now = Instant.now().getEpochSecond();
             String header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
             String payload = "{\"sub\":\"" + subject + "\",\"typ\":\"" + type
-                    + "\",\"iat\":" + now + ",\"exp\":" + (now + ttlSeconds) + "}";
+                    + "\",\"iat\":" + now + ",\"exp\":" + (now + ttlSeconds)
+                    + ",\"jti\":\"" + UUID.randomUUID() + "\"}";
 
             String unsigned = encode(header) + "." + encode(payload);
             return unsigned + "." + sign(unsigned);
         } catch (Exception exception) {
-            throw new IllegalStateException("JWT 생성에 실패했습니다.", exception);
+            throw new IllegalStateException("Failed to create JWT.", exception);
         }
     }
 
-    private Map<String, Object> parse(String token) {
+    private Map<String, Object> parse(String token, String invalidMessage) {
         try {
             String[] parts = token.split("\\.");
             if (parts.length != 3) {
@@ -72,7 +82,7 @@ public class JwtTokenProvider {
             String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
             long exp = Long.parseLong(extractNumber(payload, "exp"));
             if (exp < Instant.now().getEpochSecond()) {
-                throw new BusinessException(HttpStatus.UNAUTHORIZED, "재설정 토큰이 만료되었습니다.");
+                throw new BusinessException(HttpStatus.UNAUTHORIZED, invalidMessage);
             }
             return Map.of(
                     "sub", extractString(payload, "sub"),
@@ -82,7 +92,7 @@ public class JwtTokenProvider {
         } catch (BusinessException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "유효하지 않은 재설정 토큰입니다.");
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, invalidMessage);
         }
     }
 

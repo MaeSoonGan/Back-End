@@ -1,4 +1,4 @@
-package com.mock.maesoongan.auth.dto;
+package com.mock.maesoongan.authservice.auth;
 
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
@@ -22,6 +22,11 @@ public final class AuthDtos {
     }
 
     public record TokenResponse(String accessToken, String refreshToken) {
+    }
+
+    public record ReissueRequest(
+            @NotBlank String refreshToken
+    ) {
     }
 
     public record AvailabilityResponse(boolean available) {

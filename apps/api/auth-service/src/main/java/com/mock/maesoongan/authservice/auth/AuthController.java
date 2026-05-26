@@ -1,22 +1,22 @@
-package com.mock.maesoongan.auth.controller;
+package com.mock.maesoongan.authservice.auth;
 
-import com.mock.maesoongan.auth.dto.AuthDtos.AvailabilityResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.ExpiresInResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.FindIdRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.FindIdResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.LoginRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.RegisterRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.RegisterResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.ResetPasswordRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.ResetPasswordResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.SendEmailCodeRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.TokenResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifiedResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifyCodeRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifyResetRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifyResetResponse;
-import com.mock.maesoongan.auth.service.AuthService;
-import com.mock.maesoongan.common.response.ApiResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.AvailabilityResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ExpiresInResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.FindIdRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.FindIdResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.LoginRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ReissueRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.RegisterRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.RegisterResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ResetPasswordRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ResetPasswordResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.SendEmailCodeRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.TokenResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifiedResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyCodeRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetResponse;
+import com.mock.maesoongan.authservice.common.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -46,6 +46,12 @@ public class AuthController {
     @Operation(summary = "Login", description = "Issue JWT access and refresh tokens.")
     public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success(authService.login(request));
+    }
+
+    @PostMapping("/reissue")
+    @Operation(summary = "Reissue tokens", description = "Issue new access and refresh tokens with an active refresh token.")
+    public ApiResponse<TokenResponse> reissue(@Valid @RequestBody ReissueRequest request) {
+        return ApiResponse.success(authService.reissue(request));
     }
 
     @GetMapping("/check-id")

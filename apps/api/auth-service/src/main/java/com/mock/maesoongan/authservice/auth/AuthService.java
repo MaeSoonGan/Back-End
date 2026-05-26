@@ -1,24 +1,26 @@
-package com.mock.maesoongan.auth.service;
+package com.mock.maesoongan.authservice.auth;
 
-import com.mock.maesoongan.auth.dto.AuthDtos.AvailabilityResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.ExpiresInResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.FindIdRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.FindIdResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.LoginRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.RegisterRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.RegisterResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.ResetPasswordRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.ResetPasswordResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.SendEmailCodeRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.TokenResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifiedResponse;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifyCodeRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifyResetRequest;
-import com.mock.maesoongan.auth.dto.AuthDtos.VerifyResetResponse;
-import com.mock.maesoongan.auth.infra.EmailCodeSender;
-import com.mock.maesoongan.auth.infra.JwtTokenProvider;
-import com.mock.maesoongan.auth.infra.VerificationCodeStore;
-import com.mock.maesoongan.common.exception.BusinessException;
+import com.mock.maesoongan.authservice.auth.AuthDtos.AvailabilityResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ExpiresInResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.FindIdRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.FindIdResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.LoginRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ReissueRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.RegisterRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.RegisterResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ResetPasswordRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ResetPasswordResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.SendEmailCodeRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.TokenResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifiedResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyCodeRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetResponse;
+import com.mock.maesoongan.authservice.common.BusinessException;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
@@ -26,10 +28,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.sql.Timestamp;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 @Service
 @RequiredArgsConstructor
@@ -45,6 +43,7 @@ public class AuthService {
     private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final RefreshTokenStore refreshTokenStore;
     private final VerificationCodeStore verificationCodeStore;
     private final EmailCodeSender emailCodeSender;
 
@@ -63,10 +62,22 @@ public class AuthService {
         }
 
         resetLoginFailCount(member.memberId());
-        return new TokenResponse(
-                jwtTokenProvider.createAccessToken(member.loginId()),
-                jwtTokenProvider.createRefreshToken(member.loginId(), request.keepLoginValue())
-        );
+        String accessToken = jwtTokenProvider.createAccessToken(member.loginId());
+        String refreshToken = jwtTokenProvider.createRefreshToken(member.loginId(), request.keepLoginValue());
+        refreshTokenStore.save(member.loginId(), refreshToken);
+        return new TokenResponse(accessToken, refreshToken);
+    }
+
+    public TokenResponse reissue(ReissueRequest request) {
+        String userId = jwtTokenProvider.validateRefreshToken(request.refreshToken());
+        if (!refreshTokenStore.isActive(userId, request.refreshToken())) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid refresh token.");
+        }
+
+        String accessToken = jwtTokenProvider.createAccessToken(userId);
+        String refreshToken = jwtTokenProvider.createRefreshToken(userId, false);
+        refreshTokenStore.replace(userId, request.refreshToken(), refreshToken);
+        return new TokenResponse(accessToken, refreshToken);
     }
 
     @Transactional(readOnly = true)
@@ -159,9 +170,9 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public FindIdResponse findId(FindIdRequest request) {
-        verificationCodeStore.verify(EMAIL, request.email(), FIND_ID, request.code());
         AuthMember member = findByEmail(request.email())
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered."));
+        verificationCodeStore.verify(EMAIL, request.email(), FIND_ID, request.code());
 
         return new FindIdResponse(
                 maskUserId(member.loginId()),
@@ -214,11 +225,12 @@ public class AuthService {
                 changedAt,
                 changedAt,
                 member.memberId());
+        refreshTokenStore.revokeAll(member.loginId());
 
         return new ResetPasswordResponse(maskUserId(member.loginId()), changedAt.format(DATE_TIME_FORMAT));
     }
 
-    private java.util.Optional<AuthMember> findByLoginId(String loginId) {
+    private Optional<AuthMember> findByLoginId(String loginId) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
                        ms.created_at, dma.password_hash, dma.locked_until
@@ -228,7 +240,7 @@ public class AuthService {
                 """, loginId);
     }
 
-    private java.util.Optional<AuthMember> findByEmail(String email) {
+    private Optional<AuthMember> findByEmail(String email) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
                        ms.created_at, dma.password_hash, dma.locked_until
@@ -238,7 +250,7 @@ public class AuthService {
                 """, email);
     }
 
-    private java.util.Optional<AuthMember> findByLoginIdAndNicknameAndEmail(String loginId, String nickname, String email) {
+    private Optional<AuthMember> findByLoginIdAndNicknameAndEmail(String loginId, String nickname, String email) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
                        ms.created_at, dma.password_hash, dma.locked_until
@@ -248,9 +260,9 @@ public class AuthService {
                 """, loginId, nickname, email);
     }
 
-    private java.util.Optional<AuthMember> findOne(String sql, Object... args) {
+    private Optional<AuthMember> findOne(String sql, Object... args) {
         try {
-            return java.util.Optional.ofNullable(jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new AuthMember(
+            return Optional.ofNullable(jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new AuthMember(
                     rs.getLong("member_id"),
                     rs.getString("login_id"),
                     rs.getString("email"),
@@ -262,7 +274,7 @@ public class AuthService {
                     toLocalDateTime(rs.getTimestamp("locked_until"))
             ), args));
         } catch (EmptyResultDataAccessException e) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
     }
 

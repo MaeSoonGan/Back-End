@@ -1,6 +1,6 @@
-package com.mock.maesoongan.auth.infra;
+package com.mock.maesoongan.authservice.auth;
 
-import com.mock.maesoongan.common.exception.BusinessException;
+import com.mock.maesoongan.authservice.common.BusinessException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -31,32 +31,32 @@ public class VerificationCodeStore {
     public void verify(String channel, String target, String purpose, String code) {
         CodeEntry entry = codes.get(key(channel, target, purpose));
         if (entry == null) {
-            log.info("[VERIFICATION CODE MISSING] channel={}, target={}, purpose={}, input={}",
-                    channel, target, purpose, code);
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Verification code does not match.");
         }
         if (entry.expiresAt().isBefore(LocalDateTime.now())) {
-            log.info("[VERIFICATION CODE EXPIRED] channel={}, target={}, purpose={}, input={}",
-                    channel, target, purpose, code);
             throw new BusinessException(HttpStatus.GONE, "Verification code has expired.");
         }
         if (!entry.code().equals(code)) {
-            log.info("[VERIFICATION CODE MISMATCH] channel={}, target={}, purpose={}, expected={}, input={}",
-                    channel, target, purpose, entry.code(), code);
             throw new BusinessException(HttpStatus.BAD_REQUEST, "Verification code does not match.");
         }
-        log.info("[VERIFICATION CODE VERIFIED] channel={}, target={}, purpose={}", channel, target, purpose);
     }
 
     public String verifyAny(String channel, String target, String code, String... purposes) {
+        BusinessException expiredException = null;
         BusinessException lastException = null;
         for (String purpose : purposes) {
             try {
                 verify(channel, target, purpose, code);
                 return purpose;
             } catch (BusinessException exception) {
+                if (exception.getStatus() == HttpStatus.GONE) {
+                    expiredException = exception;
+                }
                 lastException = exception;
             }
+        }
+        if (expiredException != null) {
+            throw expiredException;
         }
         if (lastException != null) {
             throw lastException;

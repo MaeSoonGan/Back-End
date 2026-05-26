@@ -1,4 +1,4 @@
-package com.mock.maesoongan.auth.infra;
+package com.mock.maesoongan.authservice.auth;
 
 import java.security.MessageDigest;
 

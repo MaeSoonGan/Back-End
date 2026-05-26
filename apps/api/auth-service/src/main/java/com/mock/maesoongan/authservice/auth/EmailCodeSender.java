@@ -1,6 +1,6 @@
-package com.mock.maesoongan.auth.infra;
+package com.mock.maesoongan.authservice.auth;
 
-import com.mock.maesoongan.common.exception.BusinessException;
+import com.mock.maesoongan.authservice.common.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
