@@ -5,7 +5,10 @@ import com.mock.maesoongan.adminservice.system.AdminSystemDtos.ActiveUsersRespon
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AdminListItem;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AlertMutationResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AuditLogItem;
+import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AuditLogDetailResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AuditLogSummaryResponse;
+import com.mock.maesoongan.adminservice.system.AdminSystemDtos.ForceCancelOrderRequest;
+import com.mock.maesoongan.adminservice.system.AdminSystemDtos.ForceCancelOrderResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.IgnoreAlertRequest;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MaintenanceResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MaintenanceUpdateRequest;
@@ -99,6 +102,21 @@ public class AdminSystemController {
             @RequestParam(defaultValue = "8") int size
     ) {
         return ApiResponse.success(adminSystemService.getAuditLogs(keyword, startDate, endDate, type, adminId, page, size));
+    }
+
+    @Operation(summary = "Get audit log detail")
+    @GetMapping("/audit-logs/{logId}")
+    public ApiResponse<AuditLogDetailResponse> getAuditLog(@PathVariable long logId) {
+        return ApiResponse.success(adminSystemService.getAuditLog(logId));
+    }
+
+    @Operation(summary = "Force cancel abnormal order")
+    @PatchMapping("/orders/{orderId}/cancel")
+    public ApiResponse<ForceCancelOrderResponse> forceCancelOrder(
+            @PathVariable long orderId,
+            @RequestBody(required = false) ForceCancelOrderRequest request
+    ) {
+        return ApiResponse.success(adminSystemService.forceCancelOrder(orderId, request));
     }
 
     @Operation(summary = "Get admin list")
