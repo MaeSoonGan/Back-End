@@ -1,0 +1,102 @@
+package com.mock.maesoongan.realtimequoteingestor.quote.adapter.kis;
+
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+class KisRealtimeParserTest {
+
+    @Test
+    void parsesPriceRealtimeMessage() {
+        KisRealtimeParser parser = new KisRealtimeParser(properties());
+        String payload = String.join("^", priceFields());
+
+        KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(
+                "0|H0STCNT0|001|" + payload,
+                null
+        );
+
+        PriceQuoteEvent event = parsed.priceEvents().get(0);
+        assertEquals("005930", event.code());
+        assertEquals(new BigDecimal("73100"), event.price());
+        assertEquals(new BigDecimal("-500"), event.change());
+        assertEquals(new BigDecimal("-0.68"), event.changeRate());
+        assertEquals(12345678L, event.volume());
+        assertEquals("2026-05-27T12:39:29", event.sourceTimestamp().toString());
+        assertEquals(0, parsed.orderbookEvents().size());
+    }
+
+    @Test
+    void parsesOrderbookRealtimeMessage() {
+        KisRealtimeParser parser = new KisRealtimeParser(properties());
+        String payload = String.join("^", orderbookFields());
+
+        KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(
+                "0|H0STASP0|001|" + payload,
+                null
+        );
+
+        OrderbookQuoteEvent event = parsed.orderbookEvents().get(0);
+        assertEquals("005930", event.code());
+        assertEquals(10, event.asks().size());
+        assertEquals(10, event.bids().size());
+        assertEquals(new BigDecimal("73200"), event.asks().get(0).price());
+        assertEquals(1000L, event.asks().get(0).quantity());
+        assertEquals(new BigDecimal("73100"), event.bids().get(0).price());
+        assertEquals(2000L, event.bids().get(0).quantity());
+        assertEquals(0, parsed.priceEvents().size());
+    }
+
+    private static KisProperties properties() {
+        return new KisProperties(
+                "app-key",
+                "app-secret",
+                "https://example.com/oauth2/Approval",
+                "ws://example.com",
+                "H0STCNT0",
+                "H0STASP0",
+                "P"
+        );
+    }
+
+    private static List<String> priceFields() {
+        List<String> fields = IntStream.range(0, KisRealtimeParser.PRICE_FIELD_COUNT)
+                .mapToObj(index -> "0")
+                .collect(Collectors.toList());
+        fields.set(0, "005930");
+        fields.set(1, "123929");
+        fields.set(2, "73100");
+        fields.set(3, "5");
+        fields.set(4, "500");
+        fields.set(5, "0.68");
+        fields.set(7, "71500");
+        fields.set(8, "73500");
+        fields.set(9, "71200");
+        fields.set(13, "12345678");
+        fields.set(14, "889012345678");
+        fields.set(33, "20260527");
+        return fields;
+    }
+
+    private static List<String> orderbookFields() {
+        List<String> fields = IntStream.range(0, KisRealtimeParser.ORDERBOOK_FIELD_COUNT)
+                .mapToObj(index -> "0")
+                .collect(Collectors.toList());
+        fields.set(0, "005930");
+        fields.set(1, "123929");
+        for (int i = 0; i < 10; i++) {
+            fields.set(3 + i, String.valueOf(73200 + (i * 100)));
+            fields.set(13 + i, String.valueOf(73100 - (i * 100)));
+            fields.set(23 + i, String.valueOf(1000 + i));
+            fields.set(33 + i, String.valueOf(2000 + i));
+        }
+        return fields;
+    }
+}
