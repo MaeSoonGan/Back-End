@@ -106,6 +106,40 @@ public final class AdminSystemDtos {
     ) {
     }
 
+    @Schema(description = "Audit log detail response")
+    public record AuditLogDetailResponse(
+            long logId,
+            String type,
+            String action,
+            String targetType,
+            Long targetId,
+            String detail,
+            String result,
+            Long adminId,
+            String adminLoginId,
+            String adminName,
+            String adminRole,
+            String ipAddress,
+            String userAgent,
+            LocalDateTime createdAt
+    ) {
+    }
+
+    @Schema(description = "Force cancel order request")
+    public record ForceCancelOrderRequest(
+            String reason
+    ) {
+    }
+
+    @Schema(description = "Force cancel order response")
+    public record ForceCancelOrderResponse(
+            long orderId,
+            String previousStatus,
+            String status,
+            String message
+    ) {
+    }
+
     @Schema(description = "Admin list item")
     public record AdminListItem(
             long adminId,

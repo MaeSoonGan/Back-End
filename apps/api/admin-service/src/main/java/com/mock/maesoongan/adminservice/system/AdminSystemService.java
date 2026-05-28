@@ -3,9 +3,12 @@ package com.mock.maesoongan.adminservice.system;
 import com.mock.maesoongan.adminservice.common.BusinessException;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.ActiveUsersResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AdminListItem;
+import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AuditLogDetailResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AlertMutationResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AuditLogItem;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.AuditLogSummaryResponse;
+import com.mock.maesoongan.adminservice.system.AdminSystemDtos.ForceCancelOrderRequest;
+import com.mock.maesoongan.adminservice.system.AdminSystemDtos.ForceCancelOrderResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.IgnoreAlertRequest;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MaintenanceResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MaintenanceUpdateRequest;
@@ -253,6 +256,97 @@ public class AdminSystemService {
     }
 
     @Transactional(readOnly = true)
+    public AuditLogDetailResponse getAuditLog(long logId) {
+        try {
+            return jdbcTemplate.queryForObject("""
+                            select al.id,
+                                   al.action,
+                                   al.target_type,
+                                   al.target_id,
+                                   al.reason,
+                                   al.result,
+                                   al.admin_id,
+                                   a.login_id,
+                                   coalesce(a.nickname, a.login_id, 'admin') as admin_name,
+                                   a.role,
+                                   al.ip_address,
+                                   al.user_agent,
+                                   al.created_at
+                            from audit_log al
+                            left join admin a on a.id = al.admin_id
+                            where al.id = ?
+                            """,
+                    (rs, rowNum) -> {
+                        String action = rs.getString("action");
+                        String targetType = rs.getString("target_type");
+                        return new AuditLogDetailResponse(
+                                rs.getLong("id"),
+                                auditType(action, targetType),
+                                action,
+                                targetType,
+                                rs.getObject("target_id", Long.class),
+                                rs.getString("reason"),
+                                rs.getString("result"),
+                                rs.getObject("admin_id", Long.class),
+                                rs.getString("login_id"),
+                                rs.getString("admin_name"),
+                                rs.getString("role"),
+                                rs.getString("ip_address"),
+                                rs.getString("user_agent"),
+                                toLocalDateTime(rs.getTimestamp("created_at"))
+                        );
+                    },
+                    logId);
+        } catch (EmptyResultDataAccessException exception) {
+            throw notFound("Audit log not found");
+        }
+    }
+
+    @Transactional
+    public ForceCancelOrderResponse forceCancelOrder(long orderId, ForceCancelOrderRequest request) {
+        OrderStatusRow order = findOrderStatus(orderId);
+        if (order == null) {
+            throw notFound("Order not found");
+        }
+        if ("CANCELED".equals(order.status())) {
+            return new ForceCancelOrderResponse(orderId, order.status(), order.status(), "Order is already canceled");
+        }
+        if ("FILLED".equals(order.status()) || "REJECTED".equals(order.status())) {
+            throw badRequest("Only open or partially filled orders can be canceled");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        jdbcTemplate.update("""
+                update order_snapshot
+                set status = 'CANCELED',
+                    remaining_quantity = 0,
+                    updated_at = ?,
+                    synced_at = ?
+                where order_id = ?
+                """, now, now, orderId);
+
+        jdbcTemplate.update("""
+                update monitoring_status
+                set status = 'RESOLVED',
+                    resolved_at = ?,
+                    updated_at = ?
+                where status_type = 'ABNORMAL_DETECTION'
+                  and target_type = 'ORDER'
+                  and target_id = ?
+                  and status = 'PENDING'
+                """, now, now, orderId);
+
+        insertAudit(
+                currentAdminId(),
+                "FORCE_CANCEL_ORDER",
+                "ORDER",
+                orderId,
+                cleanReason(request == null ? null : request.reason(), "Order force canceled by admin")
+        );
+        return new ForceCancelOrderResponse(orderId, order.status(), "CANCELED", "Order canceled");
+    }
+
+    @Transactional(readOnly = true)
     public List<AdminListItem> getAdmins() {
         return jdbcTemplate.query("""
                 select id, login_id, nickname, email, role, status
@@ -389,6 +483,23 @@ public class AdminSystemService {
         }
     }
 
+    private OrderStatusRow findOrderStatus(long orderId) {
+        try {
+            return jdbcTemplate.queryForObject("""
+                            select order_id, status
+                            from order_snapshot
+                            where order_id = ?
+                            """,
+                    (rs, rowNum) -> new OrderStatusRow(
+                            rs.getLong("order_id"),
+                            rs.getString("status")
+                    ),
+                    orderId);
+        } catch (EmptyResultDataAccessException exception) {
+            return null;
+        }
+    }
+
     private long currentAdminId() {
         try {
             Long id = jdbcTemplate.queryForObject("select id from admin where status = 'ACTIVE' order by id asc limit 1", Long.class);
@@ -509,5 +620,8 @@ public class AdminSystemService {
     }
 
     private record MaintenanceRow(long id, String status, String message, boolean isMaintenance, LocalDateTime updatedAt) {
+    }
+
+    private record OrderStatusRow(long orderId, String status) {
     }
 }
