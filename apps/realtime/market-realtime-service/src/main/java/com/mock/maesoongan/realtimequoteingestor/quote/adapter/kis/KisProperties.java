@@ -1,0 +1,62 @@
+package com.mock.maesoongan.realtimequoteingestor.quote.adapter.kis;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+@Component
+public class KisProperties {
+
+    private final String appKey;
+    private final String appSecret;
+    private final String approvalUrl;
+    private final String websocketUrl;
+    private final String priceTrId;
+    private final String orderbookTrId;
+    private final String customerType;
+
+    public KisProperties(
+            @Value("${kis.app-key:}") String appKey,
+            @Value("${kis.app-secret:}") String appSecret,
+            @Value("${kis.approval-url:http://210.107.75.78:9443/oauth2/Approval}") String approvalUrl,
+            @Value("${kis.websocket-url:ws://210.107.75.79:21000}") String websocketUrl,
+            @Value("${kis.price-tr-id:H0STCNT0}") String priceTrId,
+            @Value("${kis.orderbook-tr-id:H0STASP0}") String orderbookTrId,
+            @Value("${kis.customer-type:P}") String customerType
+    ) {
+        this.appKey = appKey;
+        this.appSecret = appSecret;
+        this.approvalUrl = approvalUrl;
+        this.websocketUrl = websocketUrl;
+        this.priceTrId = priceTrId;
+        this.orderbookTrId = orderbookTrId;
+        this.customerType = customerType;
+    }
+
+    public String appKey() {
+        return appKey;
+    }
+
+    public String appSecret() {
+        return appSecret;
+    }
+
+    public String approvalUrl() {
+        return approvalUrl;
+    }
+
+    public String websocketUrl() {
+        return websocketUrl;
+    }
+
+    public String priceTrId() {
+        return priceTrId;
+    }
+
+    public String orderbookTrId() {
+        return orderbookTrId;
+    }
+
+    public String customerType() {
+        return customerType;
+    }
+}
