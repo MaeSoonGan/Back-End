@@ -1,0 +1,18 @@
+FROM eclipse-temurin:17-jdk AS build
+WORKDIR /workspace
+
+COPY gradlew gradlew.bat settings.gradle build.gradle ./
+COPY gradle ./gradle
+COPY apps/realtime/market-realtime-service ./apps/realtime/market-realtime-service
+
+RUN ./gradlew :apps:realtime:market-realtime-service:bootJar --no-daemon
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+
+ENV REALTIME_QUOTE_INGESTOR_PORT=8087
+EXPOSE 8087
+
+COPY --from=build /workspace/apps/realtime/market-realtime-service/build/libs/*.jar app.jar
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
