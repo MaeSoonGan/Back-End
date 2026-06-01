@@ -1,5 +1,6 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -69,6 +70,7 @@ public final class SyncDtos {
             String eventId,
 
             @NotNull(message = "tradeId is required")
+            @JsonAlias("executionId")
             Long tradeId,
 
             @NotNull(message = "orderId is required")
