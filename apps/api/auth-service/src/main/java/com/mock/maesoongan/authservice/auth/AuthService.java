@@ -17,35 +17,47 @@ import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyCodeRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetResponse;
 import com.mock.maesoongan.authservice.common.BusinessException;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
 
     private static final String EMAIL = "email";
     private static final String SIGNUP = "signup";
     private static final String FIND_ID = "find-id";
     private static final String RESET_PASSWORD = "reset-password";
+    private static final long DEFAULT_CONTEST_ID = 0L;
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
 
     private final JdbcTemplate jdbcTemplate;
+    private final StringRedisTemplate redisTemplate;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
     private final VerificationCodeStore verificationCodeStore;
     private final EmailCodeSender emailCodeSender;
+
+    @Value("${app.portfolio.initial-cash:1000000}")
+    private BigDecimal initialCash;
 
     @Transactional
     public TokenResponse login(LoginRequest request) {
@@ -164,6 +176,8 @@ public class AuthService {
                 passwordEncoder.encode(request.password()),
                 now,
                 now);
+        createInitialPortfolioSnapshot(memberId, now);
+        initializeRedisAvailableBalanceAfterCommit(memberId);
 
         return new RegisterResponse(request.userId(), request.nickname(), request.email());
     }
@@ -334,6 +348,40 @@ public class AuthService {
     private long nextMemberId() {
         Long value = jdbcTemplate.queryForObject("select coalesce(max(member_id), 0) + 1 from member_snapshot", Long.class);
         return value == null ? 1 : value;
+    }
+
+    private void createInitialPortfolioSnapshot(long memberId, LocalDateTime now) {
+        BigDecimal cash = initialCash == null ? BigDecimal.ZERO : initialCash;
+        jdbcTemplate.update("""
+                        insert into portfolio_snapshot
+                        (member_id, contest_id, cash_balance, available_cash, stock_evaluation_amount,
+                         total_asset, profit_amount, profit_rate, holdings_json, portfolio_version, synced_at)
+                        values (?, ?, ?, ?, 0, ?, 0, 0, '[]', 1, ?)
+                        """,
+                memberId,
+                DEFAULT_CONTEST_ID,
+                cash,
+                cash,
+                cash,
+                now);
+    }
+
+    private void initializeRedisAvailableBalanceAfterCommit(long memberId) {
+        BigDecimal cash = initialCash == null ? BigDecimal.ZERO : initialCash;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    redisTemplate.opsForValue().set(balanceKey(memberId, DEFAULT_CONTEST_ID), cash.toPlainString());
+                } catch (Exception exception) {
+                    log.warn("Failed to initialize Redis available balance. memberId={}", memberId, exception);
+                }
+            }
+        });
+    }
+
+    private String balanceKey(long memberId, long contestId) {
+        return "balance:" + memberId + ":" + contestId;
     }
 
     private void validateUserId(String userId) {

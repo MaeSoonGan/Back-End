@@ -13,13 +13,18 @@ public final class PortfolioDtos {
             BigDecimal totalAsset,
             BigDecimal cashBalance,
             BigDecimal availableBalance,
+            BigDecimal reservedAmount,
             BigDecimal stockValuation,
             BigDecimal profitAmount,
             BigDecimal profitRate
     ) {
     }
 
-    public record AvailableCashResponse(BigDecimal availableBalance) {
+    public record AvailableCashResponse(
+            BigDecimal cashBalance,
+            BigDecimal availableBalance,
+            BigDecimal reservedAmount
+    ) {
     }
 
     public record HoldingItem(
@@ -53,11 +58,13 @@ public final class PortfolioDtos {
             long contestId,
             BigDecimal seedMoney,
             BigDecimal currentAsset,
+            BigDecimal cashBalance,
+            BigDecimal availableBalance,
+            BigDecimal reservedAmount,
             BigDecimal profitAmount,
             BigDecimal profitRate,
             int rank,
-            long totalParticipants,
-            BigDecimal availableBalance
+            long totalParticipants
     ) {
     }
 

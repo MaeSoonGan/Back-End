@@ -48,11 +48,15 @@ public class PortfolioService {
     @Transactional(readOnly = true)
     public PortfolioSummaryResponse getSummary(long memberId) {
         PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
+        BigDecimal cashBalance = value(portfolio.cashBalance());
+        BigDecimal availableBalance = availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash());
+        BigDecimal stockValuation = value(portfolio.stockEvaluationAmount());
         return new PortfolioSummaryResponse(
-                value(portfolio.totalAsset()),
-                value(portfolio.cashBalance()),
-                availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash()),
-                value(portfolio.stockEvaluationAmount()),
+                totalAsset(cashBalance, stockValuation, portfolio.totalAsset()),
+                cashBalance,
+                availableBalance,
+                reservedAmount(cashBalance, availableBalance),
+                stockValuation,
                 value(portfolio.profitAmount()),
                 value(portfolio.profitRate())
         );
@@ -61,7 +65,9 @@ public class PortfolioService {
     @Transactional(readOnly = true)
     public AvailableCashResponse getAvailableCash(long memberId) {
         PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
-        return new AvailableCashResponse(availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash()));
+        BigDecimal cashBalance = value(portfolio.cashBalance());
+        BigDecimal availableBalance = availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash());
+        return new AvailableCashResponse(cashBalance, availableBalance, reservedAmount(cashBalance, availableBalance));
     }
 
     @Transactional(readOnly = true)
@@ -116,16 +122,21 @@ public class PortfolioService {
     public ContestAccountResponse getContestAccount(long memberId, long contestId) {
         var row = portfolioRepository.findContestAccount(memberId, contestId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Contest account not found"));
+        BigDecimal cashBalance = value(row.cashBalance());
+        BigDecimal availableBalance = availableBalance(memberId, contestId, row.availableBalance());
+        BigDecimal stockValuation = value(row.stockEvaluationAmount());
 
         return new ContestAccountResponse(
                 row.contestId(),
                 value(row.seedMoney()),
-                value(row.currentAsset()),
+                totalAsset(cashBalance, stockValuation, row.currentAsset()),
+                cashBalance,
+                availableBalance,
+                reservedAmount(cashBalance, availableBalance),
                 value(row.profitAmount()),
                 value(row.profitRate()),
                 row.rank(),
-                row.totalParticipants(),
-                availableBalance(memberId, contestId, row.availableBalance())
+                row.totalParticipants()
         );
     }
 
@@ -195,6 +206,16 @@ public class PortfolioService {
             }
         }
         return value(fallback);
+    }
+
+    private BigDecimal reservedAmount(BigDecimal cashBalance, BigDecimal availableBalance) {
+        BigDecimal reservedAmount = cashBalance.subtract(availableBalance);
+        return reservedAmount.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : reservedAmount;
+    }
+
+    private BigDecimal totalAsset(BigDecimal cashBalance, BigDecimal stockValuation, BigDecimal fallback) {
+        BigDecimal calculated = cashBalance.add(stockValuation);
+        return calculated.compareTo(BigDecimal.ZERO) == 0 ? value(fallback) : calculated;
     }
 
     private int daysByPeriod(String period) {

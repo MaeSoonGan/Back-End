@@ -72,6 +72,8 @@ public class PortfolioRepository {
         return queryOne("""
                 select c.id as contest_id,
                        c.seed_money,
+                       p.cash_balance,
+                       p.stock_evaluation_amount,
                        p.total_asset,
                        p.profit_amount,
                        p.profit_rate,
@@ -90,6 +92,8 @@ public class PortfolioRepository {
                 """, (rs, rowNum) -> new ContestAccountRow(
                 rs.getLong("contest_id"),
                 rs.getBigDecimal("seed_money"),
+                rs.getBigDecimal("cash_balance"),
+                rs.getBigDecimal("stock_evaluation_amount"),
                 rs.getBigDecimal("total_asset"),
                 rs.getBigDecimal("profit_amount"),
                 rs.getBigDecimal("profit_rate"),
@@ -132,6 +136,8 @@ public class PortfolioRepository {
     public record ContestAccountRow(
             long contestId,
             BigDecimal seedMoney,
+            BigDecimal cashBalance,
+            BigDecimal stockEvaluationAmount,
             BigDecimal currentAsset,
             BigDecimal profitAmount,
             BigDecimal profitRate,
