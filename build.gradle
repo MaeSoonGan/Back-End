@@ -40,3 +40,22 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+subprojects {
+    plugins.withId('java') {
+        dependencies {
+            add('implementation', 'io.micrometer:micrometer-tracing-bridge-otel')
+            add('implementation', 'net.logstash.logback:logstash-logback-encoder:8.1')
+            add('runtimeOnly', 'io.micrometer:micrometer-registry-prometheus')
+            add('runtimeOnly', 'io.opentelemetry:opentelemetry-exporter-otlp')
+        }
+    }
+
+    plugins.withId('java') {
+        tasks.named('processResources') {
+            from(rootProject.file('config/observability')) {
+                include 'logback-spring.xml'
+            }
+        }
+    }
+}
