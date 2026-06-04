@@ -4,6 +4,7 @@ import com.mock.maesoongan.contestservice.auth.CurrentMemberProvider;
 import com.mock.maesoongan.contestservice.common.ApiResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestDetailResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestJoinResponse;
+import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestLeaveResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestListItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestResultResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestStockItem;
@@ -18,6 +19,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -76,6 +78,12 @@ public class ContestController {
     @PostMapping("/api/contests/{contestId}/join")
     public ApiResponse<ContestJoinResponse> joinContest(@PathVariable long contestId) {
         return ApiResponse.success(contestService.joinContest(contestId, currentMemberProvider.memberId()));
+    }
+
+    @Operation(summary = "Leave contest")
+    @PatchMapping("/api/contests/{contestId}/leave")
+    public ApiResponse<ContestLeaveResponse> leaveContest(@PathVariable long contestId) {
+        return ApiResponse.success(contestService.leaveContest(contestId, currentMemberProvider.memberId()));
     }
 
     @Operation(summary = "Get tradable stocks in contest")

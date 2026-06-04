@@ -3,6 +3,7 @@ package com.mock.maesoongan.contestservice.contest;
 import com.mock.maesoongan.contestservice.common.BusinessException;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestDetailResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestJoinResponse;
+import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestLeaveResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestListItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestResultResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestStockItem;
@@ -176,6 +177,28 @@ public class ContestService {
                 "PENDING",
                 "Contest joined. Contest account provisioning is pending."
         );
+    }
+
+    @Transactional
+    public ContestLeaveResponse leaveContest(long contestId, long memberId) {
+        ContestRow contest = findContest(contestId);
+        if (contest == null) {
+            throw notFound("Contest not found");
+        }
+        if (!isJoined(contestId, memberId)) {
+            throw badRequest("Not joined contest");
+        }
+        if ("ENDED".equals(contest.status())) {
+            throw badRequest("Cannot leave an ended contest");
+        }
+
+        jdbcTemplate.update("""
+                update contest_participation
+                set status = 'WITHDRAWN'
+                where contest_id = ? and member_id = ? and status <> 'WITHDRAWN'
+                """, contestId, memberId);
+
+        return new ContestLeaveResponse(contestId, memberId, "WITHDRAWN", "Contest left.");
     }
 
     @Transactional(readOnly = true)
