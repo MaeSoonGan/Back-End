@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "Notices", description = "User notice API")
@@ -26,8 +27,11 @@ public class NoticeController {
 
     @Operation(summary = "Get notice list")
     @GetMapping
-    public ApiResponse<NoticeListResponse> getNotices() {
-        return ApiResponse.success(noticeService.getNotices());
+    public ApiResponse<NoticeListResponse> getNotices(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "5") int size
+    ) {
+        return ApiResponse.success(noticeService.getNotices(page, size));
     }
 
     @Operation(summary = "Get notice detail")

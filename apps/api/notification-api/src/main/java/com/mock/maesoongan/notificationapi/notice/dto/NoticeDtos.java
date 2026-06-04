@@ -9,7 +9,10 @@ public final class NoticeDtos {
     }
 
     public record NoticeListResponse(
-            List<NoticeItem> items
+            List<NoticeItem> content,
+            long totalElements,
+            int totalPages,
+            int currentPage
     ) {
     }
 
