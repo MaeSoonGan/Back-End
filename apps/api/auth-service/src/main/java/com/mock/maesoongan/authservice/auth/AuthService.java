@@ -71,6 +71,10 @@ public class AuthService {
         AuthMember member = findByLoginId(request.userId())
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid userId or password."));
 
+        if (member.isWithdrawn()) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "This account has been withdrawn.");
+        }
+
         if (member.isLocked()) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "Account is locked.");
         }
@@ -122,7 +126,7 @@ public class AuthService {
             throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
         }
         if ((FIND_ID.equals(request.purpose()) || RESET_PASSWORD.equals(request.purpose()))
-                && !exists("select count(*) from member_snapshot where email = ?", request.email())) {
+                && !exists("select count(*) from member_snapshot where email = ? and status <> 'DELETED'", request.email())) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered.");
         }
 
@@ -654,6 +658,10 @@ public class AuthService {
     ) {
         boolean isLocked() {
             return "SUSPENDED".equals(status) || (lockedUntil != null && lockedUntil.isAfter(LocalDateTime.now()));
+        }
+
+        boolean isWithdrawn() {
+            return "DELETED".equals(status);
         }
     }
 
