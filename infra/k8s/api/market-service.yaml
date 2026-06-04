@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-service
+  namespace: app
+  labels:
+    app: market-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: market-service
+  template:
+    metadata:
+      labels:
+        app: market-service
+    spec:
+      nodeSelector:
+        role: service
+      containers:
+        - name: market-service
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8085
+          env:
+            - name: MARKET_SERVICE_PORT
+              value: "8085"
+          envFrom:
+            - configMapRef:
+                name: maesoongan-api-config
+            - secretRef:
+                name: maesoongan-api-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8085
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8085
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: market-service
+  namespace: app
+  labels:
+    app: market-service
+spec:
+  type: ClusterIP
+  selector:
+    app: market-service
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085
