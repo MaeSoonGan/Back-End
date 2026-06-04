@@ -3,7 +3,7 @@ WORKDIR /workspace
 
 COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
-COPY apps/api/market-service ./apps/api/market-service
+COPY apps ./apps
 
 RUN chmod +x gradlew
 RUN ./gradlew :apps:api:market-service:bootJar --no-daemon
