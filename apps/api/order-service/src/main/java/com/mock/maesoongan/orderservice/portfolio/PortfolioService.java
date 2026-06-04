@@ -10,6 +10,8 @@ import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.HoldingItem;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.HoldingSnapshot;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.PortfolioSummaryResponse;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.ProfitHistoryItem;
+import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.SeedMoneyResetRequest;
+import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.SeedMoneyResetResponse;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioRepository.PortfolioRow;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioRepository.StockPriceRow;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -19,8 +21,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -30,6 +35,7 @@ public class PortfolioService {
 
     private static final long DEFAULT_CONTEST_ID = 0L;
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final BigDecimal DEFAULT_SEED_MONEY = BigDecimal.valueOf(10_000_000L);
 
     private final PortfolioRepository portfolioRepository;
     private final StringRedisTemplate redisTemplate;
@@ -140,6 +146,54 @@ public class PortfolioService {
         );
     }
 
+    @Transactional
+    public SeedMoneyResetResponse resetSeedMoney(long memberId, SeedMoneyResetRequest request) {
+        validateResetRequest(request);
+
+        ZonedDateTime now = ZonedDateTime.now(SEOUL);
+        LocalDate resetDate = now.toLocalDate();
+        LocalDateTime resetAt = now.toLocalDateTime();
+        LocalDateTime nextResetAvailableAt = resetDate.plusDays(1).atStartOfDay();
+        String resetKey = resetKey(memberId, DEFAULT_CONTEST_ID, resetDate);
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
+                resetKey,
+                resetAt.toString(),
+                Duration.between(now, resetDate.plusDays(1).atStartOfDay(SEOUL))
+        );
+        if (!Boolean.TRUE.equals(acquired)) {
+            throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "SEED_RESET_LIMIT_EXCEEDED", "Seed money can be reset once per day");
+        }
+
+        try {
+            BigDecimal previousTotalAsset = portfolioRepository.findPortfolio(memberId, DEFAULT_CONTEST_ID)
+                    .map(portfolio -> totalAsset(
+                            value(portfolio.cashBalance()),
+                            value(portfolio.stockEvaluationAmount()),
+                            portfolio.totalAsset()
+                    ))
+                    .orElse(BigDecimal.ZERO);
+            int canceledOrderCount = portfolioRepository.cancelOpenOrdersForReset(memberId, DEFAULT_CONTEST_ID, resetAt);
+
+            portfolioRepository.resetPortfolio(memberId, DEFAULT_CONTEST_ID, DEFAULT_SEED_MONEY, resetAt);
+            evictBalanceCache(memberId, DEFAULT_CONTEST_ID);
+
+            return new SeedMoneyResetResponse(
+                    DEFAULT_SEED_MONEY,
+                    previousTotalAsset,
+                    DEFAULT_SEED_MONEY,
+                    DEFAULT_SEED_MONEY,
+                    0,
+                    canceledOrderCount,
+                    resetDate,
+                    resetAt,
+                    nextResetAvailableAt
+            );
+        } catch (RuntimeException exception) {
+            redisTemplate.delete(resetKey);
+            throw exception;
+        }
+    }
+
     private PortfolioRow findPortfolio(long memberId, long contestId) {
         return portfolioRepository.findPortfolio(memberId, contestId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Portfolio not found"));
@@ -216,6 +270,31 @@ public class PortfolioService {
     private BigDecimal totalAsset(BigDecimal cashBalance, BigDecimal stockValuation, BigDecimal fallback) {
         BigDecimal calculated = cashBalance.add(stockValuation);
         return calculated.compareTo(BigDecimal.ZERO) == 0 ? value(fallback) : calculated;
+    }
+
+    private void validateResetRequest(SeedMoneyResetRequest request) {
+        if (request == null || !request.holdingsAndCashResetAgreed() || !request.irreversibleAgreed()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "RESET_CONFIRMATION_REQUIRED", "Seed money reset requires both confirmations");
+        }
+    }
+
+    private void evictBalanceCache(long memberId, long contestId) {
+        redisTemplate.delete(List.of(
+                balanceKey(memberId, contestId),
+                pendingReleaseKey(memberId, contestId)
+        ));
+    }
+
+    private String resetKey(long memberId, long contestId, LocalDate resetDate) {
+        return "seed-reset:" + memberId + ":" + contestId + ":" + resetDate;
+    }
+
+    private String balanceKey(long memberId, long contestId) {
+        return "balance:" + memberId + ":" + contestId;
+    }
+
+    private String pendingReleaseKey(long memberId, long contestId) {
+        return "balance:pending-release:" + memberId + ":" + contestId;
     }
 
     private int daysByPeriod(String period) {

@@ -2,6 +2,7 @@ package com.mock.maesoongan.orderservice.portfolio;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public final class PortfolioDtos {
@@ -72,5 +73,24 @@ public final class PortfolioDtos {
     }
 
     public record ProfitHistoryResponse(List<ProfitHistoryItem> items) {
+    }
+
+    public record SeedMoneyResetRequest(
+            boolean holdingsAndCashResetAgreed,
+            boolean irreversibleAgreed
+    ) {
+    }
+
+    public record SeedMoneyResetResponse(
+            BigDecimal seedMoney,
+            BigDecimal previousTotalAsset,
+            BigDecimal cashBalance,
+            BigDecimal availableBalance,
+            long remainingResetCount,
+            int canceledOrderCount,
+            LocalDate resetDate,
+            LocalDateTime resetAt,
+            LocalDateTime nextResetAvailableAt
+    ) {
     }
 }

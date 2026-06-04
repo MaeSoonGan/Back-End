@@ -103,6 +103,62 @@ public class PortfolioRepository {
         ), memberId, contestId);
     }
 
+    public int cancelOpenOrdersForReset(long memberId, long contestId, LocalDateTime canceledAt) {
+        return jdbcTemplate.update("""
+                update order_snapshot
+                set status = 'CANCELED',
+                    reject_reason = 'SEED_MONEY_RESET',
+                    updated_at = ?,
+                    synced_at = ?
+                where member_id = ?
+                  and contest_id = ?
+                  and status in ('PENDING', 'OPEN', 'PARTIAL', 'CANCEL_REQUESTED')
+                """, canceledAt, canceledAt, memberId, contestId);
+    }
+
+    public void resetPortfolio(long memberId, long contestId, BigDecimal seedMoney, LocalDateTime resetAt) {
+        jdbcTemplate.update("""
+                insert into portfolio_snapshot (
+                    member_id,
+                    contest_id,
+                    cash_balance,
+                    available_cash,
+                    stock_evaluation_amount,
+                    total_asset,
+                    total_buy_amount,
+                    total_sell_amount,
+                    profit_amount,
+                    profit_rate,
+                    holdings_json,
+                    portfolio_version,
+                    onprem_updated_at,
+                    synced_at
+                )
+                values (?, ?, ?, ?, 0, ?, 0, 0, 0, 0, '[]', 1, ?, ?)
+                on duplicate key update
+                    cash_balance = values(cash_balance),
+                    available_cash = values(available_cash),
+                    stock_evaluation_amount = values(stock_evaluation_amount),
+                    total_asset = values(total_asset),
+                    total_buy_amount = values(total_buy_amount),
+                    total_sell_amount = values(total_sell_amount),
+                    profit_amount = values(profit_amount),
+                    profit_rate = values(profit_rate),
+                    holdings_json = values(holdings_json),
+                    portfolio_version = portfolio_version + 1,
+                    onprem_updated_at = values(onprem_updated_at),
+                    synced_at = values(synced_at)
+                """,
+                memberId,
+                contestId,
+                seedMoney,
+                seedMoney,
+                seedMoney,
+                resetAt,
+                resetAt
+        );
+    }
+
     private <T> Optional<T> queryOne(String sql, org.springframework.jdbc.core.RowMapper<T> rowMapper, Object... args) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, rowMapper, args));
