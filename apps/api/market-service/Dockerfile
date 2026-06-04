@@ -5,6 +5,7 @@ COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
 COPY apps/api/market-service ./apps/api/market-service
 
+RUN chmod +x gradlew
 RUN ./gradlew :apps:api:market-service:bootJar --no-daemon
 
 FROM eclipse-temurin:17-jre
