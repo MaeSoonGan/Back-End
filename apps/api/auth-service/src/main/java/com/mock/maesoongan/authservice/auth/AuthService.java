@@ -264,6 +264,11 @@ public class AuthService {
         return toProfileResponse(findActiveProfileByLoginId(currentUserId(authorizationHeader)));
     }
 
+    @Transactional(readOnly = true)
+    public long currentMemberId(String authorizationHeader) {
+        return findActiveProfileByLoginId(currentUserId(authorizationHeader)).memberId();
+    }
+
     @Transactional
     public MemberProfileResponse updateMyProfile(String authorizationHeader, UpdateMemberProfileRequest request) {
         if (request == null) {
