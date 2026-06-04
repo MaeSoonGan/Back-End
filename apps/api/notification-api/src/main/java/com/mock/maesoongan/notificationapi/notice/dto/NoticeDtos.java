@@ -1,0 +1,33 @@
+package com.mock.maesoongan.notificationapi.notice.dto;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public final class NoticeDtos {
+
+    private NoticeDtos() {
+    }
+
+    public record NoticeListResponse(
+            List<NoticeItem> items
+    ) {
+    }
+
+    public record NoticeItem(
+            Long noticeId,
+            String title,
+            String content,
+            boolean isPinned,
+            LocalDateTime createdAt
+    ) {
+    }
+
+    public record NoticeDetailResponse(
+            Long noticeId,
+            String title,
+            String content,
+            boolean isPinned,
+            LocalDateTime createdAt
+    ) {
+    }
+}
