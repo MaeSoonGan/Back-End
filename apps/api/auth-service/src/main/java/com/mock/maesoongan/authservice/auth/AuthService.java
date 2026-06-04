@@ -5,6 +5,9 @@ import com.mock.maesoongan.authservice.auth.AuthDtos.ExpiresInResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.FindIdRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.FindIdResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.LoginRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ChangePasswordRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ChangePasswordResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.MemberProfileResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.ReissueRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.RegisterRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.RegisterResponse;
@@ -12,10 +15,13 @@ import com.mock.maesoongan.authservice.auth.AuthDtos.ResetPasswordRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.ResetPasswordResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.SendEmailCodeRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.TokenResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.UpdateMemberProfileRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.VerifiedResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyCodeRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.WithdrawMemberRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.WithdrawMemberResponse;
 import com.mock.maesoongan.authservice.common.BusinessException;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -44,6 +50,7 @@ public class AuthService {
     private static final String SIGNUP = "signup";
     private static final String FIND_ID = "find-id";
     private static final String RESET_PASSWORD = "reset-password";
+    private static final String UPDATE_EMAIL = "update-email";
     private static final long DEFAULT_CONTEST_ID = 0L;
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
@@ -111,6 +118,9 @@ public class AuthService {
         if (SIGNUP.equals(request.purpose()) && exists("select count(*) from member_snapshot where email = ?", request.email())) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
         }
+        if (UPDATE_EMAIL.equals(request.purpose()) && exists("select count(*) from member_snapshot where email = ? and status <> 'DELETED'", request.email())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
+        }
         if ((FIND_ID.equals(request.purpose()) || RESET_PASSWORD.equals(request.purpose()))
                 && !exists("select count(*) from member_snapshot where email = ?", request.email())) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered.");
@@ -128,7 +138,8 @@ public class AuthService {
                 request.code(),
                 SIGNUP,
                 FIND_ID,
-                RESET_PASSWORD
+                RESET_PASSWORD,
+                UPDATE_EMAIL
         );
         if (SIGNUP.equals(purpose)) {
             verificationCodeStore.markSignupEmailVerified(request.email());
@@ -244,6 +255,122 @@ public class AuthService {
         return new ResetPasswordResponse(maskUserId(member.loginId()), changedAt.format(DATE_TIME_FORMAT));
     }
 
+    @Transactional(readOnly = true)
+    public MemberProfileResponse getMyProfile(String authorizationHeader) {
+        return toProfileResponse(findActiveProfileByLoginId(currentUserId(authorizationHeader)));
+    }
+
+    @Transactional
+    public MemberProfileResponse updateMyProfile(String authorizationHeader, UpdateMemberProfileRequest request) {
+        if (request == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Request body is required.");
+        }
+
+        MemberProfile profile = findActiveProfileByLoginId(currentUserId(authorizationHeader));
+        String nextNickname = resolveNickname(profile, request.nickname());
+        String nextPhone = resolvePhone(profile, request.phone());
+        String nextEmail = resolveEmail(profile, request.email(), request.emailCode());
+        String nextProfileImageUrl = resolveProfileImageUrl(profile, request.profileImageUrl());
+        boolean emailChanged = !profile.email().equals(nextEmail);
+        LocalDateTime now = LocalDateTime.now();
+
+        jdbcTemplate.update("""
+                        update member_snapshot
+                        set nickname = ?,
+                            phone = ?,
+                            email = ?,
+                            email_verified = ?,
+                            profile_image_url = ?,
+                            updated_at = ?,
+                            synced_at = ?
+                        where member_id = ? and status = 'ACTIVE'
+                        """,
+                nextNickname,
+                nextPhone,
+                nextEmail,
+                emailChanged ? true : profile.emailVerified(),
+                nextProfileImageUrl,
+                now,
+                now,
+                profile.memberId());
+
+        return new MemberProfileResponse(
+                profile.loginId(),
+                nextNickname,
+                nextPhone,
+                nextEmail,
+                emailChanged ? true : profile.emailVerified(),
+                nextProfileImageUrl
+        );
+    }
+
+    @Transactional
+    public ChangePasswordResponse changeMyPassword(String authorizationHeader, ChangePasswordRequest request) {
+        if (request == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Request body is required.");
+        }
+        if (!request.newPassword().equals(request.newPasswordConfirm())) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "New password confirmation does not match.");
+        }
+
+        MemberProfile profile = findActiveProfileByLoginId(currentUserId(authorizationHeader));
+        if (!passwordMatches(request.currentPassword(), profile.passwordHash())) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Current password does not match.");
+        }
+        if (passwordMatches(request.newPassword(), profile.passwordHash())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "New password must be different from the old password.");
+        }
+
+        LocalDateTime changedAt = LocalDateTime.now();
+        jdbcTemplate.update("""
+                        update dev_member_auth
+                        set password_hash = ?, password_updated_at = ?, login_fail_count = 0, locked_until = null, updated_at = ?
+                        where member_id = ?
+                        """,
+                passwordEncoder.encode(request.newPassword()),
+                changedAt,
+                changedAt,
+                profile.memberId());
+        jdbcTemplate.update("""
+                        update member_snapshot
+                        set login_fail_count = 0, updated_at = ?, synced_at = ?
+                        where member_id = ? and status = 'ACTIVE'
+                        """,
+                changedAt,
+                changedAt,
+                profile.memberId());
+        refreshTokenStore.revokeAll(profile.loginId());
+
+        return new ChangePasswordResponse(changedAt.format(DATE_TIME_FORMAT));
+    }
+
+    @Transactional
+    public WithdrawMemberResponse withdrawMe(String authorizationHeader, WithdrawMemberRequest request) {
+        if (request == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Request body is required.");
+        }
+
+        MemberProfile profile = findActiveProfileByLoginId(currentUserId(authorizationHeader));
+        if (!passwordMatches(request.password(), profile.passwordHash())) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Password does not match.");
+        }
+
+        LocalDateTime withdrawnAt = LocalDateTime.now();
+        jdbcTemplate.update("""
+                        update member_snapshot
+                        set status = 'DELETED',
+                            updated_at = ?,
+                            synced_at = ?
+                        where member_id = ? and status = 'ACTIVE'
+                        """,
+                withdrawnAt,
+                withdrawnAt,
+                profile.memberId());
+        refreshTokenStore.revokeAll(profile.loginId());
+
+        return new WithdrawMemberResponse(withdrawnAt.format(DATE_TIME_FORMAT));
+    }
+
     private Optional<AuthMember> findByLoginId(String loginId) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
@@ -290,6 +417,108 @@ public class AuthService {
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
         }
+    }
+
+    private MemberProfile findActiveProfileByLoginId(String loginId) {
+        try {
+            return jdbcTemplate.queryForObject("""
+                    select ms.member_id,
+                           ms.login_id,
+                           ms.email,
+                           ms.nickname,
+                           ms.phone,
+                           ms.email_verified,
+                           ms.profile_image_url,
+                           dma.password_hash
+                    from member_snapshot ms
+                    join dev_member_auth dma on dma.member_id = ms.member_id
+                    where ms.login_id = ? and ms.status = 'ACTIVE'
+                    """, (rs, rowNum) -> new MemberProfile(
+                    rs.getLong("member_id"),
+                    rs.getString("login_id"),
+                    rs.getString("email"),
+                    rs.getString("nickname"),
+                    rs.getString("phone"),
+                    rs.getBoolean("email_verified"),
+                    rs.getString("profile_image_url"),
+                    rs.getString("password_hash")
+            ), loginId);
+        } catch (EmptyResultDataAccessException exception) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid access token.");
+        }
+    }
+
+    private String currentUserId(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Authorization bearer token is required.");
+        }
+        return jwtTokenProvider.validateAccessToken(authorizationHeader.substring("Bearer ".length()).trim());
+    }
+
+    private MemberProfileResponse toProfileResponse(MemberProfile profile) {
+        return new MemberProfileResponse(
+                profile.loginId(),
+                profile.nickname(),
+                profile.phone(),
+                profile.email(),
+                profile.emailVerified(),
+                profile.profileImageUrl()
+        );
+    }
+
+    private String resolveNickname(MemberProfile profile, String nickname) {
+        if (nickname == null) {
+            return profile.nickname();
+        }
+        String normalized = nickname.trim();
+        if (normalized.length() < 2 || normalized.length() > 10) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Nickname must be 2 to 10 characters.");
+        }
+        if (!normalized.equals(profile.nickname())
+                && exists("select count(*) from member_snapshot where nickname = ? and member_id <> ? and status <> 'DELETED'", normalized, profile.memberId())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Nickname is already in use.");
+        }
+        return normalized;
+    }
+
+    private String resolvePhone(MemberProfile profile, String phone) {
+        if (phone == null) {
+            return profile.phone();
+        }
+        String normalized = phone.trim();
+        if (!normalized.matches("^010-\\d{4}-\\d{4}$")) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Phone must match 010-0000-0000.");
+        }
+        return normalized;
+    }
+
+    private String resolveEmail(MemberProfile profile, String email, String code) {
+        if (email == null) {
+            return profile.email();
+        }
+        String normalized = email.trim();
+        if (normalized.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Email is required.");
+        }
+        if (normalized.equals(profile.email())) {
+            return profile.email();
+        }
+        if (code == null || code.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "Email verification code is required.");
+        }
+        if (exists("select count(*) from member_snapshot where email = ? and member_id <> ? and status <> 'DELETED'", normalized, profile.memberId())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
+        }
+        verificationCodeStore.verify(EMAIL, normalized, UPDATE_EMAIL, code);
+        return normalized;
+    }
+
+    private String resolveProfileImageUrl(MemberProfile profile, String profileImageUrl) {
+        if (profileImageUrl == null) {
+            return profile.profileImageUrl();
+        }
+        String normalized = profileImageUrl.trim();
+        return normalized.isBlank() ? null : normalized;
     }
 
     private boolean passwordMatches(String rawPassword, String storedPassword) {
@@ -426,5 +655,17 @@ public class AuthService {
         boolean isLocked() {
             return "SUSPENDED".equals(status) || (lockedUntil != null && lockedUntil.isAfter(LocalDateTime.now()));
         }
+    }
+
+    private record MemberProfile(
+            long memberId,
+            String loginId,
+            String email,
+            String nickname,
+            String phone,
+            boolean emailVerified,
+            String profileImageUrl,
+            String passwordHash
+    ) {
     }
 }

@@ -34,7 +34,7 @@ public final class AuthDtos {
 
     public record SendEmailCodeRequest(
             @NotBlank @Email String email,
-            @NotBlank @Pattern(regexp = "signup|find-id|reset-password") String purpose
+            @NotBlank @Pattern(regexp = "signup|find-id|reset-password|update-email") String purpose
     ) {
     }
 
@@ -93,5 +93,42 @@ public final class AuthDtos {
     }
 
     public record ResetPasswordResponse(String maskedUserId, String changedAt) {
+    }
+
+    public record MemberProfileResponse(
+            String userId,
+            String nickname,
+            String phone,
+            String email,
+            boolean emailVerified,
+            String profileImageUrl
+    ) {
+    }
+
+    public record UpdateMemberProfileRequest(
+            @Pattern(regexp = "^.{2,10}$") String nickname,
+            @Pattern(regexp = "^010-\\d{4}-\\d{4}$") String phone,
+            @Email String email,
+            @Pattern(regexp = "^\\d{6}$") String emailCode,
+            String profileImageUrl
+    ) {
+    }
+
+    public record ChangePasswordRequest(
+            @NotBlank String currentPassword,
+            @NotBlank @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{10,}$") String newPassword,
+            @NotBlank String newPasswordConfirm
+    ) {
+    }
+
+    public record ChangePasswordResponse(String changedAt) {
+    }
+
+    public record WithdrawMemberRequest(
+            @NotBlank String password
+    ) {
+    }
+
+    public record WithdrawMemberResponse(String withdrawnAt) {
     }
 }

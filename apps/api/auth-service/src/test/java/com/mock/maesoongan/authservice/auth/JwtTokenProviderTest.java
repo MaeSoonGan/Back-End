@@ -21,10 +21,29 @@ class JwtTokenProviderTest {
     }
 
     @Test
+    void validateAccessTokenReturnsSubject() {
+        String accessToken = jwtTokenProvider.createAccessToken("testuser");
+
+        String subject = jwtTokenProvider.validateAccessToken(accessToken);
+
+        assertThat(subject).isEqualTo("testuser");
+    }
+
+    @Test
     void validateRefreshTokenRejectsResetToken() {
         String resetToken = jwtTokenProvider.createResetToken("testuser").substring(4);
 
         assertThatThrownBy(() -> jwtTokenProvider.validateRefreshToken(resetToken))
+                .isInstanceOf(BusinessException.class)
+                .extracting("status")
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void validateAccessTokenRejectsRefreshToken() {
+        String refreshToken = jwtTokenProvider.createRefreshToken("testuser", false);
+
+        assertThatThrownBy(() -> jwtTokenProvider.validateAccessToken(refreshToken))
                 .isInstanceOf(BusinessException.class)
                 .extracting("status")
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
