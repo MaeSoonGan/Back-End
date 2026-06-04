@@ -16,6 +16,7 @@ class AuthServiceEmailVerificationTest {
                 null,
                 null,
                 null,
+                null,
                 verificationCodeStore,
                 null
         );

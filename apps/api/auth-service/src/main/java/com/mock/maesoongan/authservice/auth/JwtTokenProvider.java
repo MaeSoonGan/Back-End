@@ -39,6 +39,14 @@ public class JwtTokenProvider {
         return String.valueOf(claims.get("sub"));
     }
 
+    public String validateAccessToken(String accessToken) {
+        Map<String, Object> claims = parse(accessToken, "Invalid access token.");
+        if (!"access".equals(claims.get("typ"))) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid access token.");
+        }
+        return String.valueOf(claims.get("sub"));
+    }
+
     public String createResetToken(String subject) {
         return "rst_" + createToken(subject, "reset", 600);
     }
