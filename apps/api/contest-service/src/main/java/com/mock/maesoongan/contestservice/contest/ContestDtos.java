@@ -100,6 +100,15 @@ public final class ContestDtos {
     ) {
     }
 
+    @Schema(description = "Contest leave response")
+    public record ContestLeaveResponse(
+            long contestId,
+            long memberId,
+            String status,
+            String message
+    ) {
+    }
+
     @Schema(description = "Contest stock item")
     public record ContestStockItem(
             long stockId,
