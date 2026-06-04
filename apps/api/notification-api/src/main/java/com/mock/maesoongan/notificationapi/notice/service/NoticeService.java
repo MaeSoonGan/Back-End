@@ -6,12 +6,14 @@ import com.mock.maesoongan.notificationapi.notice.dto.NoticeDtos.NoticeDetailRes
 import com.mock.maesoongan.notificationapi.notice.dto.NoticeDtos.NoticeItem;
 import com.mock.maesoongan.notificationapi.notice.dto.NoticeDtos.NoticeListResponse;
 import com.mock.maesoongan.notificationapi.notice.repository.NoticeRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Service
 public class NoticeService {
@@ -23,18 +25,22 @@ public class NoticeService {
     }
 
     @Transactional(readOnly = true)
-    public NoticeListResponse getNotices() {
-        List<NoticeItem> items = noticeRepository.findVisibleNotices(LocalDateTime.now())
-                .stream()
+    public NoticeListResponse getNotices(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        Page<NoticeItem> result = noticeRepository.findVisibleNotices(LocalDateTime.now(), pageable)
                 .map(notice -> new NoticeItem(
                         notice.getId(),
                         notice.getTitle(),
                         notice.getContent(),
                         notice.isPinned(),
                         notice.getCreatedAt()
-                ))
-                .toList();
-        return new NoticeListResponse(items);
+                ));
+        return new NoticeListResponse(
+                result.getContent(),
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.getNumber()
+        );
     }
 
     @Transactional(readOnly = true)
