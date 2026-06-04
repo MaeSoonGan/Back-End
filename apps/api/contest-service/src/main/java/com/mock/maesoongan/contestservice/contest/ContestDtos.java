@@ -38,6 +38,31 @@ public final class ContestDtos {
     ) {
     }
 
+    @Schema(description = "My contest list item (with my stats)")
+    public record MyContestListItem(
+            long contestId,
+            String title,
+            String status,
+            BigDecimal seedMoney,
+            long participantCount,
+            Integer myRank,
+            BigDecimal currentAsset,
+            BigDecimal profitAmount,
+            BigDecimal profitRate,
+            List<TopRankerItem> topRankers,
+            LocalDateTime startAt,
+            LocalDateTime endAt
+    ) {
+    }
+
+    @Schema(description = "Top ranker item")
+    public record TopRankerItem(
+            Integer rank,
+            String nickname,
+            BigDecimal profitRate
+    ) {
+    }
+
     @Schema(description = "Contest detail response")
     public record ContestDetailResponse(
             long contestId,
