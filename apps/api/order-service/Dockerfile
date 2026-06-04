@@ -3,7 +3,7 @@ WORKDIR /workspace
 
 COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
-COPY apps/api/order-service ./apps/api/order-service
+COPY apps ./apps
 
 RUN chmod +x gradlew
 RUN ./gradlew :apps:api:order-service:bootJar --no-daemon
