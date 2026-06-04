@@ -6,7 +6,9 @@ import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestJoinRespons
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestListItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestResultResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestStockItem;
+import com.mock.maesoongan.contestservice.contest.ContestDtos.MyContestListItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.MyRankingResponse;
+import com.mock.maesoongan.contestservice.contest.ContestDtos.TopRankerItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationRequest;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.PageInfo;
@@ -177,7 +179,7 @@ public class ContestService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ContestListItem> getMyContests(long memberId, String status, int page, int size) {
+    public PageResponse<MyContestListItem> getMyContests(long memberId, String status, int page, int size) {
         validatePage(page, size);
         String normalizedStatus = normalizeStatus(status, List.of("ALL", "ACTIVE", "ENDED"), "contest status", "ALL");
         List<Object> args = new ArrayList<>();
@@ -203,12 +205,10 @@ public class ContestService {
         List<Object> queryArgs = new ArrayList<>(args);
         queryArgs.add(size);
         queryArgs.add(page * size);
-        List<ContestListItem> content = jdbcTemplate.query("""
+        List<MyContestListItem> content = jdbcTemplate.query("""
                         select c.id,
                                c.title,
-                               c.description,
                                c.seed_money,
-                               c.max_participants,
                                c.status,
                                c.start_at,
                                c.end_at,
@@ -225,23 +225,47 @@ public class ContestService {
                         order by c.start_at desc, c.id desc
                         limit ? offset ?
                         """.formatted(where),
-                (rs, rowNum) -> new ContestListItem(
-                        rs.getLong("id"),
-                        rs.getString("title"),
-                        rs.getString("description"),
-                        rs.getBigDecimal("seed_money"),
-                        rs.getObject("max_participants", Integer.class),
-                        rs.getLong("participant_count"),
-                        rs.getString("status"),
-                        true,
-                        false,
-                        "ALREADY_JOINED",
-                        toLocalDateTime(rs.getTimestamp("start_at")),
-                        toLocalDateTime(rs.getTimestamp("end_at"))
-                ),
+                (rs, rowNum) -> {
+                    long contestId = rs.getLong("id");
+                    RankingRow myRanking = findRanking(contestId, memberId);
+                    return new MyContestListItem(
+                            contestId,
+                            rs.getString("title"),
+                            rs.getString("status"),
+                            rs.getBigDecimal("seed_money"),
+                            rs.getLong("participant_count"),
+                            myRanking == null ? null : myRanking.rankNo(),
+                            myRanking == null ? null : myRanking.totalAsset(),
+                            myRanking == null ? null : myRanking.profitAmount(),
+                            myRanking == null ? null : myRanking.profitRate(),
+                            queryTopRankers(contestId, 3),
+                            toLocalDateTime(rs.getTimestamp("start_at")),
+                            toLocalDateTime(rs.getTimestamp("end_at"))
+                    );
+                },
                 queryArgs.toArray());
 
         return new PageResponse<>(content, total, totalPages(total, size), page);
+    }
+
+    private List<TopRankerItem> queryTopRankers(long contestId, int limit) {
+        return jdbcTemplate.query("""
+                        select r.rank_no,
+                               m.nickname,
+                               r.profit_rate
+                        from ranking r
+                        join member_snapshot m on m.member_id = r.member_id
+                        where r.contest_id = ? and r.is_excluded = false
+                        order by r.rank_no asc, r.profit_rate desc, r.member_id asc
+                        limit ?
+                        """,
+                (rs, rowNum) -> new TopRankerItem(
+                        rs.getObject("rank_no", Integer.class),
+                        rs.getString("nickname"),
+                        rs.getBigDecimal("profit_rate")
+                ),
+                contestId,
+                limit);
     }
 
     @Transactional(readOnly = true)

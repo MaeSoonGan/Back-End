@@ -7,6 +7,7 @@ import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestJoinRespons
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestListItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestResultResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestStockItem;
+import com.mock.maesoongan.contestservice.contest.ContestDtos.MyContestListItem;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.MyRankingResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationRequest;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationResponse;
@@ -57,7 +58,7 @@ public class ContestController {
 
     @Operation(summary = "Get my contest list")
     @GetMapping("/api/contests/my")
-    public ApiResponse<PageResponse<ContestListItem>> getMyContests(
+    public ApiResponse<PageResponse<MyContestListItem>> getMyContests(
             @RequestParam(defaultValue = "ALL") String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
