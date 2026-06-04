@@ -5,6 +5,7 @@ COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
 COPY apps/api/auth-service ./apps/api/auth-service
 
+RUN chmod +x gradlew
 RUN ./gradlew :apps:api:auth-service:bootJar --no-daemon
 
 FROM eclipse-temurin:17-jre
