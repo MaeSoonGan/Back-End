@@ -1,0 +1,85 @@
+name: Build and Push Docker Images to ECR
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "apps/api/**"
+      - "gradle/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradlew"
+      - ".github/workflows/build-and-push-ecr.yml"
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to build. Use all to build every service."
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - admin-service
+          - auth-service
+          - contest-service
+          - market-service
+          - order-service
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - admin-service
+          - auth-service
+          - contest-service
+          - market-service
+          - order-service
+
+    steps:
+      - name: Skip unselected service
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.service != 'all' && inputs.service != matrix.service }}
+        run: echo "Skipping ${{ matrix.service }}"
+
+      - name: Checkout
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
+        run: |
+          docker build \
+            -f apps/api/${{ matrix.service }}/Dockerfile \
+            -t $ECR_REGISTRY/maesoongan/${{ matrix.service }}:${{ github.sha }} \
+            -t $ECR_REGISTRY/maesoongan/${{ matrix.service }}:latest \
+            .
+
+      - name: Push Docker image
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
+        run: |
+          docker push $ECR_REGISTRY/maesoongan/${{ matrix.service }}:${{ github.sha }}
+          docker push $ECR_REGISTRY/maesoongan/${{ matrix.service }}:latest
