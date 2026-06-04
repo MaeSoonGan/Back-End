@@ -131,4 +131,15 @@ public final class AuthDtos {
 
     public record WithdrawMemberResponse(String withdrawnAt) {
     }
+
+    public record ProfileImageUploadUrlRequest(
+            @NotBlank @Pattern(regexp = "image/(jpeg|png|webp|gif)") String contentType
+    ) {
+    }
+
+    public record ProfileImageUploadUrlResponse(
+            String uploadUrl,
+            String imageUrl
+    ) {
+    }
 }

@@ -3,6 +3,8 @@ package com.mock.maesoongan.authservice.auth;
 import com.mock.maesoongan.authservice.auth.AuthDtos.ChangePasswordRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.ChangePasswordResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.MemberProfileResponse;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ProfileImageUploadUrlRequest;
+import com.mock.maesoongan.authservice.auth.AuthDtos.ProfileImageUploadUrlResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.UpdateMemberProfileRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.WithdrawMemberRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.WithdrawMemberResponse;
@@ -16,6 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MemberProfileController {
 
     private final AuthService authService;
+    private final ProfileImageService profileImageService;
 
     @GetMapping
     @Operation(summary = "Get my profile")
@@ -63,5 +67,15 @@ public class MemberProfileController {
             @Valid @RequestBody WithdrawMemberRequest request
     ) {
         return ApiResponse.success(authService.withdrawMe(authorization, request));
+    }
+
+    @PostMapping("/profile-image/presigned-url")
+    @Operation(summary = "Get presigned URL for profile image upload")
+    public ApiResponse<ProfileImageUploadUrlResponse> getProfileImageUploadUrl(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            @Valid @RequestBody ProfileImageUploadUrlRequest request
+    ) {
+        long memberId = authService.currentMemberId(authorization);
+        return ApiResponse.success(profileImageService.createUploadUrl(memberId, request.contentType()));
     }
 }
