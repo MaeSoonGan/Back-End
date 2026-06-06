@@ -5,6 +5,7 @@ metadata:
   namespace: app
 data:
   SPRING_PROFILES_ACTIVE: prod
+  APP_CORS_ALLOWED_ORIGINS: https://www.maesoongan.xyz,https://maesoongan.xyz
   JPA_DDL_AUTO: none
   JPA_SHOW_SQL: "false"
   JPA_FORMAT_SQL: "false"
