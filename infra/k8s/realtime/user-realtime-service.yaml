@@ -1,46 +1,46 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: admin-service
+  name: user-realtime-service
   namespace: app
   labels:
-    app: admin-service
+    app: user-realtime-service
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: admin-service
+      app: user-realtime-service
   template:
     metadata:
       labels:
-        app: admin-service
+        app: user-realtime-service
     spec:
       nodeSelector:
-        role: service
+        role: realtime
       containers:
-        - name: admin-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/admin-service:bbb762665860a290058e1795d78aebebbb74b4e0
+        - name: user-realtime-service
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/user-realtime-service:bbb762665860a290058e1795d78aebebbb74b4e0
           imagePullPolicy: Always
           ports:
-            - containerPort: 8080
+            - containerPort: 8087
           env:
-            - name: ADMIN_SERVICE_PORT
-              value: "8080"
+            - name: USER_REALTIME_SERVICE_PORT
+              value: "8087"
           envFrom:
             - configMapRef:
-                name: maesoongan-api-config
+                name: maesoongan-realtime-config
             - secretRef:
                 name: maesoongan-api-secret
           readinessProbe:
             httpGet:
               path: /api/health
-              port: 8080
+              port: 8087
             initialDelaySeconds: 20
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /api/health
-              port: 8080
+              port: 8087
             initialDelaySeconds: 60
             periodSeconds: 20
           resources:
@@ -54,15 +54,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: admin-service
+  name: user-realtime-service
   namespace: app
   labels:
-    app: admin-service
+    app: user-realtime-service
 spec:
   type: ClusterIP
   selector:
-    app: admin-service
+    app: user-realtime-service
   ports:
     - name: http
-      port: 8080
-      targetPort: 8080
+      port: 8087
+      targetPort: 8087

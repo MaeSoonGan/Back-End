@@ -3,8 +3,9 @@ WORKDIR /workspace
 
 COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
-COPY apps/realtime/market-realtime-service ./apps/realtime/market-realtime-service
+COPY apps ./apps
 
+RUN chmod +x gradlew
 RUN ./gradlew :apps:realtime:market-realtime-service:bootJar --no-daemon
 
 FROM eclipse-temurin:17-jre

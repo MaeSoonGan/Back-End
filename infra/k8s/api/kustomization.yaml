@@ -8,3 +8,4 @@ resources:
   - contest-service.yaml
   - market-service.yaml
   - order-service.yaml
+  - ingress.yaml

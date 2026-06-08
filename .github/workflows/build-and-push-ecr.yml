@@ -7,6 +7,7 @@ on:
       - develop
     paths:
       - "apps/api/**"
+      - "apps/realtime/**"
       - "gradle/**"
       - "build.gradle"
       - "settings.gradle"
@@ -26,10 +27,16 @@ on:
           - contest-service
           - market-service
           - order-service
+          - market-realtime-service
+          - user-realtime-service
+
+concurrency:
+  group: build-and-push-ecr-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -48,6 +55,8 @@ jobs:
           - contest-service
           - market-service
           - order-service
+          - market-realtime-service
+          - user-realtime-service
 
     steps:
       - name: Skip unselected service
@@ -72,8 +81,14 @@ jobs:
       - name: Build Docker image
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
         run: |
+          if [[ "${{ matrix.service }}" == *"realtime-service" ]]; then
+            SERVICE_PATH="apps/realtime/${{ matrix.service }}"
+          else
+            SERVICE_PATH="apps/api/${{ matrix.service }}"
+          fi
+
           docker build \
-            -f apps/api/${{ matrix.service }}/Dockerfile \
+            -f $SERVICE_PATH/Dockerfile \
             -t $ECR_REGISTRY/maesoongan/${{ matrix.service }}:${{ github.sha }} \
             -t $ECR_REGISTRY/maesoongan/${{ matrix.service }}:latest \
             .
@@ -83,3 +98,63 @@ jobs:
         run: |
           docker push $ECR_REGISTRY/maesoongan/${{ matrix.service }}:${{ github.sha }}
           docker push $ECR_REGISTRY/maesoongan/${{ matrix.service }}:latest
+
+  update-k8s-image-tags:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Update Kubernetes image tags
+        env:
+          SELECTED_SERVICE: ${{ github.event_name == 'workflow_dispatch' && inputs.service || 'all' }}
+        run: |
+          set -euo pipefail
+
+          all_services=(
+            admin-service
+            auth-service
+            contest-service
+            market-service
+            order-service
+            market-realtime-service
+            user-realtime-service
+          )
+
+          if [[ "$SELECTED_SERVICE" == "all" ]]; then
+            services=("${all_services[@]}")
+          else
+            services=("$SELECTED_SERVICE")
+          fi
+
+          for service in "${services[@]}"; do
+            if [[ "$service" == *"realtime-service" ]]; then
+              manifest="infra/k8s/realtime/${service}.yaml"
+            else
+              manifest="infra/k8s/api/${service}.yaml"
+            fi
+
+            image="$ECR_REGISTRY/maesoongan/${service}:${GITHUB_SHA}"
+            sed -i -E "s#image: ${ECR_REGISTRY}/maesoongan/${service}:[^[:space:]]+#image: ${image}#" "$manifest"
+            echo "Updated $manifest -> $image"
+          done
+
+      - name: Commit Kubernetes image tag updates
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- infra/k8s/api infra/k8s/realtime; then
+            echo "No Kubernetes image tag changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add infra/k8s/api infra/k8s/realtime
+          git commit -m "CHORE: update Kubernetes image tags to ${GITHUB_SHA}"
+          git push origin HEAD:${GITHUB_REF_NAME}
