@@ -7,6 +7,7 @@ on:
       - develop
     paths:
       - "apps/api/**"
+      - "apps/realtime/**"
       - "gradle/**"
       - "build.gradle"
       - "settings.gradle"
@@ -26,6 +27,8 @@ on:
           - contest-service
           - market-service
           - order-service
+          - market-realtime-service
+          - user-realtime-service
 
 permissions:
   id-token: write
@@ -48,6 +51,8 @@ jobs:
           - contest-service
           - market-service
           - order-service
+          - market-realtime-service
+          - user-realtime-service
 
     steps:
       - name: Skip unselected service
@@ -72,8 +77,14 @@ jobs:
       - name: Build Docker image
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
         run: |
+          if [[ "${{ matrix.service }}" == *"realtime-service" ]]; then
+            SERVICE_PATH="apps/realtime/${{ matrix.service }}"
+          else
+            SERVICE_PATH="apps/api/${{ matrix.service }}"
+          fi
+
           docker build \
-            -f apps/api/${{ matrix.service }}/Dockerfile \
+            -f $SERVICE_PATH/Dockerfile \
             -t $ECR_REGISTRY/maesoongan/${{ matrix.service }}:${{ github.sha }} \
             -t $ECR_REGISTRY/maesoongan/${{ matrix.service }}:latest \
             .
