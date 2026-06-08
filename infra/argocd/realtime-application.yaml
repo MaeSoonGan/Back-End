@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/MaeSoonGan/Back-End.git
-    targetRevision: feat/order-api
+    targetRevision: develop
     path: infra/k8s/realtime
   destination:
     server: https://kubernetes.default.svc
