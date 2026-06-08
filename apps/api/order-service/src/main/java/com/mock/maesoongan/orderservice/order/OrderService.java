@@ -193,16 +193,17 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public TradeListResponse getTrades(long memberId, LocalDate from, LocalDate to, String side, Integer page, Integer size) {
+    public TradeListResponse getTrades(long memberId, Long contestId, LocalDate from, LocalDate to, String side, Integer page, Integer size) {
         int resolvedPage = resolvePage(page);
         int resolvedSize = resolveSize(size);
         LocalDate resolvedTo = to == null ? LocalDate.now(SEOUL) : to;
         LocalDate resolvedFrom = from == null ? resolvedTo.minusDays(30) : from;
         String normalizedSide = normalizeTradeSide(side);
-        int total = orderRepository.countTrades(memberId, resolvedFrom, resolvedTo, normalizedSide);
-        var summary = orderRepository.summarizeTrades(memberId, resolvedFrom, resolvedTo, normalizedSide);
+        int total = orderRepository.countTrades(memberId, contestId, resolvedFrom, resolvedTo, normalizedSide);
+        var summary = orderRepository.summarizeTrades(memberId, contestId, resolvedFrom, resolvedTo, normalizedSide);
         var items = orderRepository.findTrades(
                         memberId,
+                        contestId,
                         resolvedFrom,
                         resolvedTo,
                         normalizedSide,

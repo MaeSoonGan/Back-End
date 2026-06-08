@@ -57,14 +57,19 @@ public class PortfolioController {
 
     @Operation(summary = "Get holdings")
     @GetMapping("/portfolio/holdings")
-    public ApiResponse<List<HoldingItem>> getHoldings() {
-        return ApiResponse.success(portfolioService.getHoldings(currentMemberProvider.memberId()));
+    public ApiResponse<List<HoldingItem>> getHoldings(
+            @RequestParam(required = false) Long contestId
+    ) {
+        return ApiResponse.success(portfolioService.getHoldings(currentMemberProvider.memberId(), contestId));
     }
 
     @Operation(summary = "Get holding by stock code")
     @GetMapping("/portfolio/holdings/{stockCode}")
-    public ApiResponse<HoldingDetailResponse> getHolding(@PathVariable String stockCode) {
-        return ApiResponse.success(portfolioService.getHolding(currentMemberProvider.memberId(), stockCode));
+    public ApiResponse<HoldingDetailResponse> getHolding(
+            @PathVariable String stockCode,
+            @RequestParam(required = false) Long contestId
+    ) {
+        return ApiResponse.success(portfolioService.getHolding(currentMemberProvider.memberId(), stockCode, contestId));
     }
 
     @Operation(summary = "Get profit history")

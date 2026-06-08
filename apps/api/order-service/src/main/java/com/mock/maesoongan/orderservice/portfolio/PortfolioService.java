@@ -77,24 +77,26 @@ public class PortfolioService {
     }
 
     @Transactional(readOnly = true)
-    public List<HoldingItem> getHoldings(long memberId) {
-        PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
+    public List<HoldingItem> getHoldings(long memberId, Long contestId) {
+        long resolvedContestId = resolveContestId(contestId);
+        PortfolioRow portfolio = findPortfolio(memberId, resolvedContestId);
         return parseHoldings(portfolio.holdingsJson())
                 .stream()
-                .map(holding -> toHoldingItem(memberId, DEFAULT_CONTEST_ID, holding))
+                .map(holding -> toHoldingItem(memberId, resolvedContestId, holding))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public HoldingDetailResponse getHolding(long memberId, String stockCode) {
+    public HoldingDetailResponse getHolding(long memberId, String stockCode, Long contestId) {
+        long resolvedContestId = resolveContestId(contestId);
         String normalizedCode = stockCode.trim().toUpperCase(Locale.ROOT);
-        HoldingSnapshot holding = parseHoldings(findPortfolio(memberId, DEFAULT_CONTEST_ID).holdingsJson())
+        HoldingSnapshot holding = parseHoldings(findPortfolio(memberId, resolvedContestId).holdingsJson())
                 .stream()
                 .filter(item -> normalizedCode.equals(item.stockCode()))
                 .findFirst()
                 .orElse(new HoldingSnapshot(normalizedCode, 0));
 
-        long pendingSellQuantity = portfolioRepository.countPendingSellQuantity(memberId, DEFAULT_CONTEST_ID, normalizedCode);
+        long pendingSellQuantity = portfolioRepository.countPendingSellQuantity(memberId, resolvedContestId, normalizedCode);
         long availableQuantity = Math.max(0, holding.quantity() - pendingSellQuantity);
         StockPriceRow stock = portfolioRepository.findStockPrice(normalizedCode)
                 .orElse(new StockPriceRow(normalizedCode, normalizedCode, BigDecimal.ZERO));
@@ -192,6 +194,10 @@ public class PortfolioService {
             redisTemplate.delete(resetKey);
             throw exception;
         }
+    }
+
+    private long resolveContestId(Long contestId) {
+        return contestId == null ? DEFAULT_CONTEST_ID : contestId;
     }
 
     private PortfolioRow findPortfolio(long memberId, long contestId) {
