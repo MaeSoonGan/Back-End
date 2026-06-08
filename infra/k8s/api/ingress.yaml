@@ -1,0 +1,110 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: maesoongan-api-ingress
+  namespace: app
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-northeast-2:295234319852:certificate/13d8880c-47d0-4428-bc56-2f4b6852ba67
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/success-codes: "200"
+spec:
+  ingressClassName: alb
+  rules:
+    - host: www.maesoongan.xyz
+      http:
+        paths:
+          - path: /api/market/price
+            pathType: Prefix
+            backend:
+              service:
+                name: market-realtime-service
+                port:
+                  number: 8087
+          - path: /api/market/prices
+            pathType: Prefix
+            backend:
+              service:
+                name: market-realtime-service
+                port:
+                  number: 8087
+          - path: /api/realtime
+            pathType: Prefix
+            backend:
+              service:
+                name: user-realtime-service
+                port:
+                  number: 8087
+          - path: /api/admin
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-service
+                port:
+                  number: 8080
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8081
+          - path: /api/members
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 8081
+          - path: /api/contests
+            pathType: Prefix
+            backend:
+              service:
+                name: contest-service
+                port:
+                  number: 8082
+          - path: /api/market
+            pathType: Prefix
+            backend:
+              service:
+                name: market-service
+                port:
+                  number: 8085
+          - path: /api/stocks
+            pathType: Prefix
+            backend:
+              service:
+                name: market-service
+                port:
+                  number: 8085
+          - path: /api/watchlist
+            pathType: Prefix
+            backend:
+              service:
+                name: market-service
+                port:
+                  number: 8085
+          - path: /api/orders
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8084
+          - path: /api/trades
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8084
+          - path: /api/portfolio
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8084
