@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-realtime-service
+  namespace: app
+  labels:
+    app: market-realtime-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: market-realtime-service
+  template:
+    metadata:
+      labels:
+        app: market-realtime-service
+    spec:
+      nodeSelector:
+        role: realtime
+      containers:
+        - name: market-realtime-service
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-realtime-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8087
+          env:
+            - name: REALTIME_QUOTE_INGESTOR_PORT
+              value: "8087"
+          envFrom:
+            - configMapRef:
+                name: maesoongan-realtime-config
+            - secretRef:
+                name: maesoongan-api-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8087
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8087
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: market-realtime-service
+  namespace: app
+  labels:
+    app: market-realtime-service
+spec:
+  type: ClusterIP
+  selector:
+    app: market-realtime-service
+  ports:
+    - name: http
+      port: 8087
+      targetPort: 8087

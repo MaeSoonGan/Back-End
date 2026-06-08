@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-realtime-service
+  namespace: app
+  labels:
+    app: user-realtime-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-realtime-service
+  template:
+    metadata:
+      labels:
+        app: user-realtime-service
+    spec:
+      nodeSelector:
+        role: realtime
+      containers:
+        - name: user-realtime-service
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/user-realtime-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8087
+          env:
+            - name: USER_REALTIME_SERVICE_PORT
+              value: "8087"
+          envFrom:
+            - configMapRef:
+                name: maesoongan-realtime-config
+            - secretRef:
+                name: maesoongan-api-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8087
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8087
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-realtime-service
+  namespace: app
+  labels:
+    app: user-realtime-service
+spec:
+  type: ClusterIP
+  selector:
+    app: user-realtime-service
+  ports:
+    - name: http
+      port: 8087
+      targetPort: 8087

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: maesoongan-realtime
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/MaeSoonGan/Back-End.git
+    targetRevision: feat/order-api
+    path: infra/k8s/realtime
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
