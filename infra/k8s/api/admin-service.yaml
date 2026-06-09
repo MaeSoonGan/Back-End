@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: admin-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: admin-service-secret
   labels:
     app: admin-service
 spec:

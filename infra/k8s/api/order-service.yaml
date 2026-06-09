@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: order-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: order-service-secret
   labels:
     app: order-service
 spec:

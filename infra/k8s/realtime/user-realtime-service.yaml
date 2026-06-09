@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: user-realtime-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-realtime-config
+    secret.reloader.stakater.com/reload: user-realtime-service-secret
   labels:
     app: user-realtime-service
 spec:

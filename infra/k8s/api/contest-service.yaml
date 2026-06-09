@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: contest-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: contest-service-secret
   labels:
     app: contest-service
 spec:

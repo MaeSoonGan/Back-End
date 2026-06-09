@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: auth-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: auth-service-secret
   labels:
     app: auth-service
 spec:

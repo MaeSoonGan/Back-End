@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: market-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: market-service-secret
   labels:
     app: market-service
 spec:
