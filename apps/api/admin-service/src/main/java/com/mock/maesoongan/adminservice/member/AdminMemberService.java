@@ -31,6 +31,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -239,7 +240,7 @@ public class AdminMemberService {
 
         StringBuilder csv = new StringBuilder("memberId,nickname,accountId,email,joinDate,contestCount,totalAsset,profitRate,loginFailCount,status\n");
         for (MemberListItem member : members) {
-            csv.append(csvLine(List.of(
+            csv.append(csvLine(Arrays.asList(
                     member.memberId(),
                     member.nickname(),
                     member.accountId(),
@@ -436,7 +437,7 @@ public class AdminMemberService {
         List<SuspensionHistoryItem> rows = querySuspensionHistory(filter.whereClause(), filter.args(), "");
         StringBuilder csv = new StringBuilder("suspensionId,memberId,nickname,accountId,reason,status,adminId,adminName,createdAt,releasedAt\n");
         for (SuspensionHistoryItem row : rows) {
-            csv.append(csvLine(List.of(
+            csv.append(csvLine(Arrays.asList(
                     row.suspensionId(),
                     row.memberId(),
                     row.nickname(),
@@ -557,7 +558,7 @@ public class AdminMemberService {
         List<SeedPaymentHistoryItem> rows = querySeedPaymentHistory(filter.whereClause(), filter.args(), "");
         StringBuilder csv = new StringBuilder("seedHistoryId,memberId,nickname,accountId,contestId,amount,reason,requestStatus,adminId,adminName,createdAt,processedAt\n");
         for (SeedPaymentHistoryItem row : rows) {
-            csv.append(csvLine(List.of(
+            csv.append(csvLine(Arrays.asList(
                     row.seedHistoryId(),
                     row.memberId(),
                     row.nickname(),
