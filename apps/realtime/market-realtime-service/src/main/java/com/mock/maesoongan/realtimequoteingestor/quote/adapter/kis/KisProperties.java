@@ -12,6 +12,7 @@ public class KisProperties {
     private final String websocketUrl;
     private final String priceTrId;
     private final String orderbookTrId;
+    private final String indexTrId;
     private final String customerType;
 
     public KisProperties(
@@ -21,6 +22,7 @@ public class KisProperties {
             @Value("${kis.websocket-url:ws://210.107.75.79:21000}") String websocketUrl,
             @Value("${kis.price-tr-id:H0STCNT0}") String priceTrId,
             @Value("${kis.orderbook-tr-id:H0STASP0}") String orderbookTrId,
+            @Value("${kis.index-tr-id:H0UPCNT0}") String indexTrId,
             @Value("${kis.customer-type:P}") String customerType
     ) {
         this.appKey = appKey;
@@ -29,6 +31,7 @@ public class KisProperties {
         this.websocketUrl = websocketUrl;
         this.priceTrId = priceTrId;
         this.orderbookTrId = orderbookTrId;
+        this.indexTrId = indexTrId;
         this.customerType = customerType;
     }
 
@@ -54,6 +57,10 @@ public class KisProperties {
 
     public String orderbookTrId() {
         return orderbookTrId;
+    }
+
+    public String indexTrId() {
+        return indexTrId;
     }
 
     public String customerType() {

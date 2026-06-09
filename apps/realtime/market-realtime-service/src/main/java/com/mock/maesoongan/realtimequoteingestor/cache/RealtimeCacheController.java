@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Locale;
+
 @RestController
 @Tag(
         name = "운영/진단용 Redis API",
@@ -20,6 +22,7 @@ public class RealtimeCacheController {
     private static final String PRICE_KEY_SUFFIX = ":price";
     private static final String ORDERBOOK_KEY_PREFIX = "stock:";
     private static final String ORDERBOOK_KEY_SUFFIX = ":orderbook";
+    private static final String INDEX_KEY_PREFIX = "market:index:";
 
     private final RedisCacheProbe redisCacheProbe;
 
@@ -58,6 +61,18 @@ public class RealtimeCacheController {
             @PathVariable String stockCode
     ) {
         return ApiResponse.success(redisCacheProbe.get(ORDERBOOK_KEY_PREFIX + stockCode + ORDERBOOK_KEY_SUFFIX));
+    }
+
+    @GetMapping("/api/realtime/cache/index/{market}")
+    @Operation(
+            summary = "Redis 최신 지수 원본 확인",
+            description = "`market:index:{market}` 키에 저장된 최신 지수 JSON 원본을 조회합니다. KIS 지수 수신과 Redis 적재 여부를 확인할 때 사용합니다."
+    )
+    public ApiResponse<RedisCacheProbe.RedisCacheValue> index(
+            @Parameter(description = "시장 지수 이름", example = "KOSPI")
+            @PathVariable String market
+    ) {
+        return ApiResponse.success(redisCacheProbe.get(INDEX_KEY_PREFIX + market.toUpperCase(Locale.ROOT)));
     }
 
     @GetMapping("/api/realtime/cache/stock-master")

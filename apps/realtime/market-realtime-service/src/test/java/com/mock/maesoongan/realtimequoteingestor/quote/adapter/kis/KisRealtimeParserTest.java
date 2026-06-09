@@ -2,6 +2,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter.kis;
 
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -54,6 +55,27 @@ class KisRealtimeParserTest {
         assertEquals(0, parsed.priceEvents().size());
     }
 
+    @Test
+    void parsesIndexRealtimeMessage() {
+        KisRealtimeParser parser = new KisRealtimeParser(properties());
+        String payload = String.join("^", indexFields());
+
+        KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(
+                "0|H0UPCNT0|001|" + payload,
+                null
+        );
+
+        IndexQuoteEvent event = parsed.indexEvents().get(0);
+        assertEquals("0001", event.code());
+        assertEquals("KOSPI", event.name());
+        assertEquals(new BigDecimal("2847.15"), event.value());
+        assertEquals(new BigDecimal("15.42"), event.change());
+        assertEquals(new BigDecimal("0.54"), event.changeRate());
+        assertEquals(123456L, event.volume());
+        assertEquals(0, parsed.priceEvents().size());
+        assertEquals(0, parsed.orderbookEvents().size());
+    }
+
     private static KisProperties properties() {
         return new KisProperties(
                 "app-key",
@@ -62,6 +84,7 @@ class KisRealtimeParserTest {
                 "ws://example.com",
                 "H0STCNT0",
                 "H0STASP0",
+                "H0UPCNT0",
                 "P"
         );
     }
@@ -97,6 +120,20 @@ class KisRealtimeParserTest {
             fields.set(23 + i, String.valueOf(1000 + i));
             fields.set(33 + i, String.valueOf(2000 + i));
         }
+        return fields;
+    }
+
+    private static List<String> indexFields() {
+        List<String> fields = IntStream.range(0, KisRealtimeParser.INDEX_FIELD_COUNT)
+                .mapToObj(index -> "0")
+                .collect(Collectors.toList());
+        fields.set(0, "0001");
+        fields.set(1, "101530");
+        fields.set(2, "2847.15");
+        fields.set(3, "2");
+        fields.set(4, "15.42");
+        fields.set(5, "123456");
+        fields.set(9, "0.54");
         return fields;
     }
 }

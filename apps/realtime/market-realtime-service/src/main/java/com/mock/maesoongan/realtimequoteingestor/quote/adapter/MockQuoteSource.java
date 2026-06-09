@@ -3,6 +3,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookLevel;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteEventHandler;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteSource;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -43,6 +45,7 @@ public class MockQuoteSource implements QuoteSource {
     private final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicLong sequence = new AtomicLong();
     private final List<String> subscribedCodes = new CopyOnWriteArrayList<>();
+    private final List<String> subscribedIndexes = new CopyOnWriteArrayList<>();
     private ScheduledExecutorService executorService;
     private QuoteEventHandler handler;
 
@@ -93,6 +96,24 @@ public class MockQuoteSource implements QuoteSource {
     }
 
     @Override
+    public void subscribeIndexes(List<String> markets) {
+        markets.stream()
+                .map(this::normalizeMarket)
+                .filter(market -> !market.isBlank())
+                .distinct()
+                .filter(market -> !subscribedIndexes.contains(market))
+                .forEach(subscribedIndexes::add);
+    }
+
+    @Override
+    public void unsubscribeIndexes(List<String> markets) {
+        markets.stream()
+                .map(this::normalizeMarket)
+                .filter(market -> !market.isBlank())
+                .forEach(subscribedIndexes::remove);
+    }
+
+    @Override
     public boolean isConnected() {
         return connected.get();
     }
@@ -109,6 +130,11 @@ public class MockQuoteSource implements QuoteSource {
 
             handler.handlePrice(priceEvent);
             handler.handleOrderbook(createOrderbookQuoteEvent(code, priceEvent.price(), currentSequence, now));
+        }
+        for (String market : subscribedIndexes) {
+            long currentSequence = sequence.incrementAndGet();
+            LocalDateTime now = LocalDateTime.now();
+            handler.handleIndex(createIndexQuoteEvent(market, currentSequence, now));
         }
     }
 
@@ -158,5 +184,47 @@ public class MockQuoteSource implements QuoteSource {
                 now,
                 currentSequence
         );
+    }
+
+    private IndexQuoteEvent createIndexQuoteEvent(String market, long currentSequence, LocalDateTime now) {
+        BigDecimal baseValue = switch (market) {
+            case "KOSPI" -> new BigDecimal("2800.00");
+            case "KOSDAQ" -> new BigDecimal("850.00");
+            case "KOSPI200" -> new BigDecimal("380.00");
+            default -> new BigDecimal("1000.00");
+        };
+        BigDecimal change = BigDecimal.valueOf((currentSequence % 21) - 10).multiply(new BigDecimal("0.25"));
+        BigDecimal value = baseValue.add(change).max(BigDecimal.ONE);
+        BigDecimal changeRate = change
+                .multiply(new BigDecimal("100"))
+                .divide(baseValue, 2, RoundingMode.HALF_UP);
+        long volume = 100_000L + (currentSequence * 1_000L);
+
+        return IndexQuoteEvent.of(
+                indexCode(market),
+                market,
+                value,
+                change,
+                changeRate,
+                volume,
+                now,
+                now,
+                currentSequence
+        );
+    }
+
+    private String normalizeMarket(String market) {
+        if (market == null || market.isBlank()) {
+            return "";
+        }
+        return market.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String indexCode(String market) {
+        return switch (market) {
+            case "KOSPI" -> "0001";
+            case "KOSDAQ" -> "0002";
+            default -> market;
+        };
     }
 }

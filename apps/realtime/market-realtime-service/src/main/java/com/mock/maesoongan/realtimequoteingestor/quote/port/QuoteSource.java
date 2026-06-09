@@ -12,5 +12,11 @@ public interface QuoteSource {
 
     void unsubscribe(List<String> stockCodes);
 
+    default void subscribeIndexes(List<String> markets) {
+    }
+
+    default void unsubscribeIndexes(List<String> markets) {
+    }
+
     boolean isConnected();
 }

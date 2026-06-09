@@ -14,6 +14,7 @@ import java.net.http.WebSocket;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +35,7 @@ public class KisQuoteSource implements QuoteSource {
     private final HttpClient httpClient;
     private final ScheduledExecutorService reconnectExecutor;
     private final Set<String> subscribedCodes = ConcurrentHashMap.newKeySet();
+    private final Set<String> subscribedIndexes = ConcurrentHashMap.newKeySet();
     private final Map<String, KisRealtimeParser.EncryptionContext> encryptionContexts = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -107,6 +109,32 @@ public class KisQuoteSource implements QuoteSource {
     }
 
     @Override
+    public void subscribeIndexes(List<String> markets) {
+        List<String> newIndexes = markets.stream()
+                .map(this::normalizeMarket)
+                .filter(market -> !market.isBlank())
+                .distinct()
+                .filter(subscribedIndexes::add)
+                .toList();
+        if (connected.get()) {
+            newIndexes.forEach(market -> sendIndexSubscription(market, "1"));
+        }
+    }
+
+    @Override
+    public void unsubscribeIndexes(List<String> markets) {
+        List<String> removedIndexes = markets.stream()
+                .map(this::normalizeMarket)
+                .filter(market -> !market.isBlank())
+                .distinct()
+                .filter(subscribedIndexes::remove)
+                .toList();
+        if (connected.get()) {
+            removedIndexes.forEach(market -> sendIndexSubscription(market, "2"));
+        }
+    }
+
+    @Override
     public boolean isConnected() {
         return connected.get();
     }
@@ -133,6 +161,7 @@ public class KisQuoteSource implements QuoteSource {
         connected.set(true);
         reconnectAttempt.set(0);
         subscribedCodes.forEach(code -> sendSubscriptions(code, "1"));
+        subscribedIndexes.forEach(market -> sendIndexSubscription(market, "1"));
     }
 
     private void sendSubscriptions(String stockCode, String trType) {
@@ -167,6 +196,10 @@ public class KisQuoteSource implements QuoteSource {
         }
     }
 
+    private void sendIndexSubscription(String market, String trType) {
+        sendSubscription(properties.indexTrId(), indexCode(market), trType);
+    }
+
     private void handleText(String message) {
         if (message.contains("PINGPONG")) {
             WebSocket socket = webSocket;
@@ -188,6 +221,22 @@ public class KisQuoteSource implements QuoteSource {
         KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(message, encryptionContext);
         parsed.priceEvents().forEach(handler::handlePrice);
         parsed.orderbookEvents().forEach(handler::handleOrderbook);
+        parsed.indexEvents().forEach(handler::handleIndex);
+    }
+
+    private String normalizeMarket(String market) {
+        if (market == null || market.isBlank()) {
+            return "";
+        }
+        return market.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String indexCode(String market) {
+        return switch (market) {
+            case "KOSPI" -> "0001";
+            case "KOSDAQ" -> "0002";
+            default -> market;
+        };
     }
 
     private void handleJsonMessage(String message) {

@@ -3,6 +3,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter.kis;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookLevel;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -23,6 +24,7 @@ public class KisRealtimeParser {
 
     static final int PRICE_FIELD_COUNT = 46;
     static final int ORDERBOOK_FIELD_COUNT = 59;
+    static final int INDEX_FIELD_COUNT = 30;
 
     private final KisProperties properties;
 
@@ -72,6 +74,25 @@ public class KisRealtimeParser {
         return events;
     }
 
+    public List<IndexQuoteEvent> parseIndexEvents(String payload) {
+        List<String[]> records = splitRecords(payload, INDEX_FIELD_COUNT);
+        List<IndexQuoteEvent> events = new ArrayList<>();
+        for (String[] fields : records) {
+            events.add(IndexQuoteEvent.of(
+                    fields[0],
+                    indexName(fields[0]),
+                    decimal(fields[2]),
+                    signedChange(fields[3], fields[4]),
+                    signedChange(fields[3], fields[9]),
+                    longValue(fields[5]),
+                    timestamp(null, fields[1]),
+                    LocalDateTime.now(),
+                    System.nanoTime()
+            ));
+        }
+        return events;
+    }
+
     public ParsedRealtimeMessage parse(String rawMessage, EncryptionContext encryptionContext) {
         String[] parts = rawMessage.split("\\|", 4);
         if (parts.length < 4) {
@@ -86,10 +107,13 @@ public class KisRealtimeParser {
         }
 
         if (properties.priceTrId().equals(trId)) {
-            return new ParsedRealtimeMessage(parsePriceEvents(payload), List.of());
+            return new ParsedRealtimeMessage(parsePriceEvents(payload), List.of(), List.of());
         }
         if (properties.orderbookTrId().equals(trId)) {
-            return new ParsedRealtimeMessage(List.of(), parseOrderbookEvents(payload));
+            return new ParsedRealtimeMessage(List.of(), parseOrderbookEvents(payload), List.of());
+        }
+        if (properties.indexTrId().equals(trId)) {
+            return new ParsedRealtimeMessage(List.of(), List.of(), parseIndexEvents(payload));
         }
         return ParsedRealtimeMessage.empty();
     }
@@ -122,6 +146,14 @@ public class KisRealtimeParser {
             return number.abs().negate();
         }
         return number;
+    }
+
+    private String indexName(String code) {
+        return switch (code) {
+            case "0001" -> "KOSPI";
+            case "0002" -> "KOSDAQ";
+            default -> code;
+        };
     }
 
     private LocalDateTime timestamp(String date, String time) {
@@ -161,11 +193,12 @@ public class KisRealtimeParser {
 
     public record ParsedRealtimeMessage(
             List<PriceQuoteEvent> priceEvents,
-            List<OrderbookQuoteEvent> orderbookEvents
+            List<OrderbookQuoteEvent> orderbookEvents,
+            List<IndexQuoteEvent> indexEvents
     ) {
 
         static ParsedRealtimeMessage empty() {
-            return new ParsedRealtimeMessage(List.of(), List.of());
+            return new ParsedRealtimeMessage(List.of(), List.of(), List.of());
         }
     }
 

@@ -2,6 +2,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter;
 
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteEventHandler;
 import org.junit.jupiter.api.Test;
 
@@ -38,11 +39,37 @@ class MockQuoteSourceTest {
         }
     }
 
+    @Test
+    void emitsIndexForSubscribedMarkets() throws InterruptedException {
+        MockQuoteSource quoteSource = new MockQuoteSource(10);
+        CapturingQuoteEventHandler handler = new CapturingQuoteEventHandler(1);
+
+        try {
+            quoteSource.start(handler);
+            quoteSource.subscribeIndexes(List.of("KOSPI"));
+
+            assertTrue(handler.await(1, TimeUnit.SECONDS));
+            assertNotNull(handler.indexEvent.get());
+            assertEquals("KOSPI", handler.indexEvent.get().name());
+        } finally {
+            quoteSource.stop();
+        }
+    }
+
     private static class CapturingQuoteEventHandler implements QuoteEventHandler {
 
-        private final CountDownLatch latch = new CountDownLatch(2);
+        private final CountDownLatch latch;
         private final AtomicReference<PriceQuoteEvent> priceEvent = new AtomicReference<>();
         private final AtomicReference<OrderbookQuoteEvent> orderbookEvent = new AtomicReference<>();
+        private final AtomicReference<IndexQuoteEvent> indexEvent = new AtomicReference<>();
+
+        private CapturingQuoteEventHandler() {
+            this(2);
+        }
+
+        private CapturingQuoteEventHandler(int expectedEvents) {
+            this.latch = new CountDownLatch(expectedEvents);
+        }
 
         @Override
         public void handlePrice(PriceQuoteEvent event) {
@@ -53,6 +80,12 @@ class MockQuoteSourceTest {
         @Override
         public void handleOrderbook(OrderbookQuoteEvent event) {
             orderbookEvent.set(event);
+            latch.countDown();
+        }
+
+        @Override
+        public void handleIndex(IndexQuoteEvent event) {
+            indexEvent.set(event);
             latch.countDown();
         }
 

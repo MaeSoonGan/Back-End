@@ -1,6 +1,7 @@
 package com.mock.maesoongan.realtimequoteingestor.quote.application;
 
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceMapper;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookLevel;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
@@ -59,6 +60,7 @@ class QuoteIngestionServiceTest {
         assertEquals(1, eventPublisher.priceEvents.size());
         assertEquals(1, status.priceEventCount());
         assertEquals(0, status.orderbookEventCount());
+        assertEquals(0, status.indexEventCount());
         assertEquals(event.receivedAt(), status.lastReceivedAt());
     }
 
@@ -78,6 +80,27 @@ class QuoteIngestionServiceTest {
         assertEquals(1, eventPublisher.orderbookEvents.size());
         assertEquals(0, status.priceEventCount());
         assertEquals(1, status.orderbookEventCount());
+        assertEquals(0, status.indexEventCount());
+        assertEquals(event.receivedAt(), status.lastReceivedAt());
+    }
+
+    @Test
+    void handlesIndexEvent() {
+        FakeQuoteSource source = new FakeQuoteSource();
+        FakeCacheWriter cacheWriter = new FakeCacheWriter();
+        FakeEventPublisher eventPublisher = new FakeEventPublisher();
+        QuoteIngestionService service = new QuoteIngestionService(source, cacheWriter, eventPublisher, event -> {
+        }, marketPriceMapper(), "mock");
+        IndexQuoteEvent event = indexEvent();
+
+        service.handleIndex(event);
+
+        QuoteIngestionStatus status = service.status();
+        assertEquals(1, cacheWriter.indexEvents.size());
+        assertEquals(1, eventPublisher.indexEvents.size());
+        assertEquals(0, status.priceEventCount());
+        assertEquals(0, status.orderbookEventCount());
+        assertEquals(1, status.indexEventCount());
         assertEquals(event.receivedAt(), status.lastReceivedAt());
     }
 
@@ -137,6 +160,22 @@ class QuoteIngestionServiceTest {
         );
     }
 
+    private static IndexQuoteEvent indexEvent() {
+        LocalDateTime now = LocalDateTime.of(2026, 5, 26, 10, 0);
+
+        return IndexQuoteEvent.of(
+                "0001",
+                "KOSPI",
+                new BigDecimal("2847.15"),
+                new BigDecimal("15.42"),
+                new BigDecimal("0.54"),
+                123456L,
+                now,
+                now.plusNanos(100_000_000),
+                3
+        );
+    }
+
     private static class FakeQuoteSource implements QuoteSource {
 
         private boolean connected;
@@ -176,6 +215,7 @@ class QuoteIngestionServiceTest {
 
         private final List<PriceQuoteEvent> priceEvents = new ArrayList<>();
         private final List<OrderbookQuoteEvent> orderbookEvents = new ArrayList<>();
+        private final List<IndexQuoteEvent> indexEvents = new ArrayList<>();
         private boolean failOnPrice;
 
         @Override
@@ -192,6 +232,11 @@ class QuoteIngestionServiceTest {
         }
 
         @Override
+        public void saveIndex(IndexQuoteEvent event) {
+            indexEvents.add(event);
+        }
+
+        @Override
         public boolean isEnabled() {
             return false;
         }
@@ -201,6 +246,7 @@ class QuoteIngestionServiceTest {
 
         private final List<PriceQuoteEvent> priceEvents = new ArrayList<>();
         private final List<OrderbookQuoteEvent> orderbookEvents = new ArrayList<>();
+        private final List<IndexQuoteEvent> indexEvents = new ArrayList<>();
 
         @Override
         public void publishPrice(PriceQuoteEvent event) {
@@ -210,6 +256,11 @@ class QuoteIngestionServiceTest {
         @Override
         public void publishOrderbook(OrderbookQuoteEvent event) {
             orderbookEvents.add(event);
+        }
+
+        @Override
+        public void publishIndex(IndexQuoteEvent event) {
+            indexEvents.add(event);
         }
 
         @Override

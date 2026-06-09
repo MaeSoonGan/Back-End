@@ -1,8 +1,13 @@
 package com.mock.maesoongan.realtimequoteingestor.quote.application;
 
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceMapper;
+import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketIndexResponse;
+import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPriceResponse;
+import com.mock.maesoongan.realtimequoteingestor.market.event.MarketIndexUpdatedEvent;
+import com.mock.maesoongan.realtimequoteingestor.market.event.MarketOrderbookUpdatedEvent;
 import com.mock.maesoongan.realtimequoteingestor.market.event.MarketPriceUpdatedEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteCacheWriter;
@@ -32,6 +37,7 @@ public class QuoteIngestionService implements QuoteEventHandler {
     private final AtomicReference<String> lastError = new AtomicReference<>();
     private final AtomicLong priceEventCount = new AtomicLong();
     private final AtomicLong orderbookEventCount = new AtomicLong();
+    private final AtomicLong indexEventCount = new AtomicLong();
 
     public QuoteIngestionService(
             QuoteSource quoteSource,
@@ -75,6 +81,14 @@ public class QuoteIngestionService implements QuoteEventHandler {
         quoteSource.unsubscribe(stockCodes);
     }
 
+    public void subscribeIndexes(List<String> markets) {
+        quoteSource.subscribeIndexes(markets);
+    }
+
+    public void unsubscribeIndexes(List<String> markets) {
+        quoteSource.unsubscribeIndexes(markets);
+    }
+
     @Override
     public void handlePrice(PriceQuoteEvent event) {
         try {
@@ -97,7 +111,24 @@ public class QuoteIngestionService implements QuoteEventHandler {
         try {
             quoteCacheWriter.saveOrderbook(event);
             quoteEventPublisher.publishOrderbook(event);
+            applicationEventPublisher.publishEvent(new MarketOrderbookUpdatedEvent(MarketOrderbookResponse.from(event)));
             orderbookEventCount.incrementAndGet();
+            lastReceivedAt.set(event.receivedAt());
+            lastError.set(null);
+        } catch (RuntimeException exception) {
+            ingestionStatus.set(IngestionStatus.FAILED);
+            lastError.set(rootCauseMessage(exception));
+            throw exception;
+        }
+    }
+
+    @Override
+    public void handleIndex(IndexQuoteEvent event) {
+        try {
+            quoteCacheWriter.saveIndex(event);
+            quoteEventPublisher.publishIndex(event);
+            applicationEventPublisher.publishEvent(new MarketIndexUpdatedEvent(MarketIndexResponse.from(event)));
+            indexEventCount.incrementAndGet();
             lastReceivedAt.set(event.receivedAt());
             lastError.set(null);
         } catch (RuntimeException exception) {
@@ -117,6 +148,7 @@ public class QuoteIngestionService implements QuoteEventHandler {
                 lastReceivedAt.get(),
                 priceEventCount.get(),
                 orderbookEventCount.get(),
+                indexEventCount.get(),
                 lastError.get(),
                 LocalDateTime.now()
         );

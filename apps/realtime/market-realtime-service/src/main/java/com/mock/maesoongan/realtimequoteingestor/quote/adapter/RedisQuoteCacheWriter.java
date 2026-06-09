@@ -4,8 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceMapper;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceService;
+import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketIndexResponse;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteCacheWriter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +22,7 @@ public class RedisQuoteCacheWriter implements QuoteCacheWriter {
 
     static final String ORDERBOOK_KEY_PREFIX = "stock:";
     static final String ORDERBOOK_KEY_SUFFIX = ":orderbook";
+    static final String INDEX_KEY_PREFIX = "market:index:";
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
@@ -53,12 +56,21 @@ public class RedisQuoteCacheWriter implements QuoteCacheWriter {
     }
 
     @Override
+    public void saveIndex(IndexQuoteEvent event) {
+        redisTemplate.opsForValue().set(indexKey(event.name()), toJson(MarketIndexResponse.from(event)), quoteTtl);
+    }
+
+    @Override
     public boolean isEnabled() {
         return true;
     }
 
     static String orderbookKey(String code) {
         return ORDERBOOK_KEY_PREFIX + code + ORDERBOOK_KEY_SUFFIX;
+    }
+
+    static String indexKey(String market) {
+        return INDEX_KEY_PREFIX + market;
     }
 
     private String toJson(Object event) {
