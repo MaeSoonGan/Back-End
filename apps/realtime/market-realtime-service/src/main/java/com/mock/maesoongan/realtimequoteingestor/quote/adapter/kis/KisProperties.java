@@ -18,8 +18,8 @@ public class KisProperties {
     public KisProperties(
             @Value("${kis.app-key:}") String appKey,
             @Value("${kis.app-secret:}") String appSecret,
-            @Value("${kis.approval-url:http://210.107.75.78:9443/oauth2/Approval}") String approvalUrl,
-            @Value("${kis.websocket-url:ws://210.107.75.79:21000}") String websocketUrl,
+            @Value("${kis.approval-url:https://openapivts.koreainvestment.com:29443/oauth2/Approval}") String approvalUrl,
+            @Value("${kis.websocket-url:ws://ops.koreainvestment.com:31000}") String websocketUrl,
             @Value("${kis.price-tr-id:H0STCNT0}") String priceTrId,
             @Value("${kis.orderbook-tr-id:H0STASP0}") String orderbookTrId,
             @Value("${kis.index-tr-id:H0UPCNT0}") String indexTrId,

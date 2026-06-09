@@ -24,8 +24,8 @@ data:
   REALTIME_HEARTBEAT_INTERVAL_MS: "30000"
   KIS_BASE_URL: https://openapivts.koreainvestment.com:29443
   KIS_ENVIRONMENT: demo
-  KIS_APPROVAL_URL: http://210.107.75.78:9443/oauth2/Approval
-  KIS_WEBSOCKET_URL: ws://210.107.75.79:21000
+  KIS_APPROVAL_URL: https://openapivts.koreainvestment.com:29443/oauth2/Approval
+  KIS_WEBSOCKET_URL: ws://ops.koreainvestment.com:31000
   KIS_PRICE_TR_ID: H0STCNT0
   KIS_ORDERBOOK_TR_ID: H0STASP0
   KIS_CUSTOMER_TYPE: P
