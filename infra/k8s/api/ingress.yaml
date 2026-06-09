@@ -11,9 +11,21 @@ metadata:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-northeast-2:295234319852:certificate/13d8880c-47d0-4428-bc56-2f4b6852ba67
     alb.ingress.kubernetes.io/healthcheck-path: /api/health
     alb.ingress.kubernetes.io/success-codes: "200"
+    alb.ingress.kubernetes.io/actions.redirect-to-www: >-
+      {"type":"redirect","redirectConfig":{"host":"www.maesoongan.xyz","protocol":"HTTPS","port":"443","statusCode":"HTTP_301"}}
 spec:
   ingressClassName: alb
   rules:
+    - host: maesoongan.xyz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: redirect-to-www
+                port:
+                  name: use-annotation
     - host: www.maesoongan.xyz
       http:
         paths:
