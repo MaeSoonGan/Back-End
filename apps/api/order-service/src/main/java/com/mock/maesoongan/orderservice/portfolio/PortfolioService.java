@@ -154,11 +154,18 @@ public class PortfolioService {
     public SeedMoneyResetResponse resetSeedMoney(long memberId, SeedMoneyResetRequest request) {
         validateResetRequest(request);
 
+        // 초기화 대상 계좌: 0이면 일반계좌(기본 시드머니), 그 외엔 해당 대회 계좌(대회 시드머니)
+        long contestId = resolveContestId(request.contestId());
+        BigDecimal seedMoney = contestId == DEFAULT_CONTEST_ID
+                ? DEFAULT_SEED_MONEY
+                : portfolioRepository.findContestSeedMoney(contestId)
+                        .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "CONTEST_NOT_FOUND", "Contest not found"));
+
         ZonedDateTime now = ZonedDateTime.now(SEOUL);
         LocalDate resetDate = now.toLocalDate();
         LocalDateTime resetAt = now.toLocalDateTime();
         LocalDateTime nextResetAvailableAt = resetDate.plusDays(1).atStartOfDay();
-        String resetKey = resetKey(memberId, DEFAULT_CONTEST_ID, resetDate);
+        String resetKey = resetKey(memberId, contestId, resetDate);
         Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
                 resetKey,
                 resetAt.toString(),
@@ -169,23 +176,23 @@ public class PortfolioService {
         }
 
         try {
-            BigDecimal previousTotalAsset = portfolioRepository.findPortfolio(memberId, DEFAULT_CONTEST_ID)
+            BigDecimal previousTotalAsset = portfolioRepository.findPortfolio(memberId, contestId)
                     .map(portfolio -> totalAsset(
                             value(portfolio.cashBalance()),
                             value(portfolio.stockEvaluationAmount()),
                             portfolio.totalAsset()
                     ))
                     .orElse(BigDecimal.ZERO);
-            int canceledOrderCount = portfolioRepository.cancelOpenOrdersForReset(memberId, DEFAULT_CONTEST_ID, resetAt);
+            int canceledOrderCount = portfolioRepository.cancelOpenOrdersForReset(memberId, contestId, resetAt);
 
-            portfolioRepository.resetPortfolio(memberId, DEFAULT_CONTEST_ID, DEFAULT_SEED_MONEY, resetAt);
-            evictBalanceCache(memberId, DEFAULT_CONTEST_ID);
+            portfolioRepository.resetPortfolio(memberId, contestId, seedMoney, resetAt);
+            evictBalanceCache(memberId, contestId);
 
             return new SeedMoneyResetResponse(
-                    DEFAULT_SEED_MONEY,
+                    seedMoney,
                     previousTotalAsset,
-                    DEFAULT_SEED_MONEY,
-                    DEFAULT_SEED_MONEY,
+                    seedMoney,
+                    seedMoney,
                     0,
                     canceledOrderCount,
                     resetDate,

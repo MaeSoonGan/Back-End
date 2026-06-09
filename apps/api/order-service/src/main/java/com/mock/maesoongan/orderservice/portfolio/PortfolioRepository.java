@@ -104,6 +104,14 @@ public class PortfolioRepository {
         ), memberId, contestId);
     }
 
+    public Optional<BigDecimal> findContestSeedMoney(long contestId) {
+        return queryOne("""
+                select seed_money
+                from contest
+                where id = ?
+                """, (rs, rowNum) -> rs.getBigDecimal("seed_money"), contestId);
+    }
+
     public int cancelOpenOrdersForReset(long memberId, long contestId, LocalDateTime canceledAt) {
         return jdbcTemplate.update("""
                 update order_snapshot

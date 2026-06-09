@@ -21,6 +21,7 @@ public final class NoticeDtos {
             String title,
             String content,
             boolean isPinned,
+            String authorName,
             LocalDateTime createdAt
     ) {
     }
@@ -30,6 +31,7 @@ public final class NoticeDtos {
             String title,
             String content,
             boolean isPinned,
+            String authorName,
             LocalDateTime createdAt
     ) {
     }
