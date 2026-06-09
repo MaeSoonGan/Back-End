@@ -635,9 +635,9 @@ public class ContestService {
         if (joined) {
             return new JoinAvailability(false, "ALREADY_JOINED");
         }
-        // 예정(SCHEDULED), 진행중(ACTIVE, CLOSING_SOON) 대회는 참가 가능. 종료된 대회만 불가.
-        if (!"SCHEDULED".equals(status) && !"ACTIVE".equals(status) && !"CLOSING_SOON".equals(status)) {
-            return new JoinAvailability(false, "CONTEST_NOT_JOINABLE_STATUS");
+        // 진행중(ACTIVE, CLOSING_SOON) 대회만 참가 가능. 시작 전(SCHEDULED)·종료(ENDED) 대회는 불가.
+        if (!"ACTIVE".equals(status) && !"CLOSING_SOON".equals(status)) {
+            return new JoinAvailability(false, "SCHEDULED".equals(status) ? "CONTEST_NOT_STARTED" : "CONTEST_NOT_JOINABLE_STATUS");
         }
         if (maxParticipants != null && participantCount >= maxParticipants) {
             return new JoinAvailability(false, "MAX_PARTICIPANTS_EXCEEDED");

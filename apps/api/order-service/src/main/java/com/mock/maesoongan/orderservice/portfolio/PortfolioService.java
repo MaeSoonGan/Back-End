@@ -114,18 +114,17 @@ public class PortfolioService {
 
     @Transactional(readOnly = true)
     public List<ProfitHistoryItem> getProfitHistory(long memberId, String period) {
-        PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
         int days = daysByPeriod(period);
         LocalDate today = LocalDate.now(SEOUL);
-        List<ProfitHistoryItem> items = new ArrayList<>();
+        LocalDate from = today.minusDays(days - 1L);
 
-        for (int i = days - 1; i >= 0; i--) {
-            items.add(new ProfitHistoryItem(
-                    today.minusDays(i),
-                    value(portfolio.profitRate()),
-                    value(portfolio.totalAsset())
-            ));
-        }
+        List<ProfitHistoryItem> items = new ArrayList<>();
+        portfolioRepository.findDailyProfitHistory(memberId, DEFAULT_CONTEST_ID, from, today)
+                .forEach(row -> items.add(new ProfitHistoryItem(
+                        row.snapshotDate(),
+                        value(row.profitRate()),
+                        value(row.totalAsset())
+                )));
         return items;
     }
 

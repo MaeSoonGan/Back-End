@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -159,6 +160,34 @@ public class PortfolioRepository {
         );
     }
 
+    public List<DailyProfitRow> findDailyProfitHistory(long memberId, long contestId, LocalDate from, LocalDate to) {
+        return jdbcTemplate.query("""
+                select snapshot_date, profit_rate, total_asset
+                from portfolio_daily_snapshot
+                where member_id = ?
+                  and contest_id = ?
+                  and snapshot_date between ? and ?
+                order by snapshot_date
+                """, (rs, rowNum) -> new DailyProfitRow(
+                rs.getDate("snapshot_date").toLocalDate(),
+                rs.getBigDecimal("profit_rate"),
+                rs.getBigDecimal("total_asset")
+        ), memberId, contestId, java.sql.Date.valueOf(from), java.sql.Date.valueOf(to));
+    }
+
+    public int snapshotDaily(LocalDate snapshotDate) {
+        return jdbcTemplate.update("""
+                insert into portfolio_daily_snapshot
+                    (member_id, contest_id, snapshot_date, profit_rate, profit_amount, total_asset)
+                select member_id, contest_id, ?, profit_rate, profit_amount, total_asset
+                from portfolio_snapshot
+                on duplicate key update
+                    profit_rate   = values(profit_rate),
+                    profit_amount = values(profit_amount),
+                    total_asset   = values(total_asset)
+                """, java.sql.Date.valueOf(snapshotDate));
+    }
+
     private <T> Optional<T> queryOne(String sql, org.springframework.jdbc.core.RowMapper<T> rowMapper, Object... args) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, rowMapper, args));
@@ -187,6 +216,9 @@ public class PortfolioRepository {
     }
 
     public record StockPriceRow(String stockCode, String stockName, BigDecimal currentPrice) {
+    }
+
+    public record DailyProfitRow(LocalDate snapshotDate, BigDecimal profitRate, BigDecimal totalAsset) {
     }
 
     public record ContestAccountRow(
