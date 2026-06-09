@@ -14,6 +14,8 @@ import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.SeedMoneyResetRe
 import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.SeedMoneyResetResponse;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioRepository.PortfolioRow;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioRepository.StockPriceRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ import java.util.Locale;
 @Service
 public class PortfolioService {
 
+    private static final Logger log = LoggerFactory.getLogger(PortfolioService.class);
     private static final long DEFAULT_CONTEST_ID = 0L;
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final BigDecimal DEFAULT_SEED_MONEY = BigDecimal.valueOf(10_000_000L);
@@ -257,13 +260,16 @@ public class PortfolioService {
     }
 
     private BigDecimal availableBalance(long memberId, long contestId, BigDecimal fallback) {
-        String cached = redisTemplate.opsForValue().get("balance:" + memberId + ":" + contestId);
-        if (cached != null && !cached.isBlank()) {
-            try {
+        try {
+            String cached = redisTemplate.opsForValue().get("balance:" + memberId + ":" + contestId);
+            if (cached != null && !cached.isBlank()) {
                 return new BigDecimal(cached);
-            } catch (NumberFormatException ignored) {
-                return value(fallback);
             }
+        } catch (NumberFormatException ignored) {
+            // 캐시값 형식 오류 → DB값 사용 (Redis 장애 아님, 로그 불필요)
+        } catch (Exception e) {
+            // Redis 연결 실패/타임아웃 → DB값으로 폴백 (서비스 중단 방지). 모니터링 위해 WARN 로깅.
+            log.warn("Redis 사용 불가 (balance:{}:{}) → DB값으로 폴백. cause={}", memberId, contestId, e.toString());
         }
         return value(fallback);
     }
