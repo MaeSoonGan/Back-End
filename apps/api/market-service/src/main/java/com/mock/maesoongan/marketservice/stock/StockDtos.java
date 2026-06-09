@@ -9,6 +9,7 @@ public final class StockDtos {
     }
 
     public record StockPriceResponse(
+            long stockId,
             String code,
             String name,
             BigDecimal price,
@@ -44,6 +45,7 @@ public final class StockDtos {
     }
 
     public record StockSearchItem(
+            long stockId,
             String stockCode,
             String stockName,
             String market,
