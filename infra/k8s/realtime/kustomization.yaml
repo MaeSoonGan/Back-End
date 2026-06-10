@@ -5,3 +5,4 @@ resources:
   - configmap.yaml
   - market-realtime-service.yaml
   - user-realtime-service.yaml
+  - internal-ingress.yaml
