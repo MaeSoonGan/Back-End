@@ -27,13 +27,13 @@ public class MarketDataRepository {
                        s.code,
                        s.name,
                        s.market,
-                       p.current_price,
-                       p.change_amount,
-                       p.change_rate,
-                       p.volume,
+                       coalesce(p.current_price, 0) as current_price,
+                       coalesce(p.change_amount, 0) as change_amount,
+                       coalesce(p.change_rate, 0)  as change_rate,
+                       coalesce(p.volume, 0)       as volume,
                        p.updated_at
                 from stock s
-                join stock_price_snapshot p on p.stock_code = s.code
+                left join stock_price_snapshot p on p.stock_code = s.code
                 where s.code = ? and s.status = 'ACTIVE'
                 """, (rs, rowNum) -> new StockPriceRow(
                 rs.getLong("id"),
