@@ -8,9 +8,13 @@ public interface QuoteSource {
 
     void stop();
 
-    void subscribe(List<String> stockCodes);
+    void subscribePrices(List<String> stockCodes);
 
-    void unsubscribe(List<String> stockCodes);
+    void unsubscribePrices(List<String> stockCodes);
+
+    void subscribeOrderbooks(List<String> stockCodes);
+
+    void unsubscribeOrderbooks(List<String> stockCodes);
 
     default void subscribeIndexes(List<String> markets) {
     }

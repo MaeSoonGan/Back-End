@@ -44,7 +44,8 @@ public class MockQuoteSource implements QuoteSource {
     private final long emitIntervalMillis;
     private final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicLong sequence = new AtomicLong();
-    private final List<String> subscribedCodes = new CopyOnWriteArrayList<>();
+    private final List<String> subscribedPriceCodes = new CopyOnWriteArrayList<>();
+    private final List<String> subscribedOrderbookCodes = new CopyOnWriteArrayList<>();
     private final List<String> subscribedIndexes = new CopyOnWriteArrayList<>();
     private ScheduledExecutorService executorService;
     private QuoteEventHandler handler;
@@ -78,21 +79,23 @@ public class MockQuoteSource implements QuoteSource {
     }
 
     @Override
-    public void subscribe(List<String> stockCodes) {
-        stockCodes.stream()
-                .map(String::trim)
-                .filter(code -> !code.isBlank())
-                .distinct()
-                .filter(code -> !subscribedCodes.contains(code))
-                .forEach(subscribedCodes::add);
+    public void subscribePrices(List<String> stockCodes) {
+        subscribeStocks(stockCodes, subscribedPriceCodes);
     }
 
     @Override
-    public void unsubscribe(List<String> stockCodes) {
-        stockCodes.stream()
-                .map(String::trim)
-                .filter(code -> !code.isBlank())
-                .forEach(subscribedCodes::remove);
+    public void unsubscribePrices(List<String> stockCodes) {
+        unsubscribeStocks(stockCodes, subscribedPriceCodes);
+    }
+
+    @Override
+    public void subscribeOrderbooks(List<String> stockCodes) {
+        subscribeStocks(stockCodes, subscribedOrderbookCodes);
+    }
+
+    @Override
+    public void unsubscribeOrderbooks(List<String> stockCodes) {
+        unsubscribeStocks(stockCodes, subscribedOrderbookCodes);
     }
 
     @Override
@@ -123,13 +126,16 @@ public class MockQuoteSource implements QuoteSource {
             return;
         }
 
-        for (String code : subscribedCodes) {
+        for (String code : subscribedPriceCodes) {
             long currentSequence = sequence.incrementAndGet();
             LocalDateTime now = LocalDateTime.now();
-            PriceQuoteEvent priceEvent = createPriceQuoteEvent(code, currentSequence, now);
-
-            handler.handlePrice(priceEvent);
-            handler.handleOrderbook(createOrderbookQuoteEvent(code, priceEvent.price(), currentSequence, now));
+            handler.handlePrice(createPriceQuoteEvent(code, currentSequence, now));
+        }
+        for (String code : subscribedOrderbookCodes) {
+            long currentSequence = sequence.incrementAndGet();
+            LocalDateTime now = LocalDateTime.now();
+            BigDecimal basePrice = BASE_PRICES.getOrDefault(code, new BigDecimal("50000"));
+            handler.handleOrderbook(createOrderbookQuoteEvent(code, basePrice, currentSequence, now));
         }
         for (String market : subscribedIndexes) {
             long currentSequence = sequence.incrementAndGet();
@@ -226,5 +232,21 @@ public class MockQuoteSource implements QuoteSource {
             case "KOSDAQ" -> "1001";
             default -> market;
         };
+    }
+
+    private void subscribeStocks(List<String> stockCodes, List<String> subscriptions) {
+        stockCodes.stream()
+                .map(String::trim)
+                .filter(code -> !code.isBlank())
+                .distinct()
+                .filter(code -> !subscriptions.contains(code))
+                .forEach(subscriptions::add);
+    }
+
+    private void unsubscribeStocks(List<String> stockCodes, List<String> subscriptions) {
+        stockCodes.stream()
+                .map(String::trim)
+                .filter(code -> !code.isBlank())
+                .forEach(subscriptions::remove);
     }
 }

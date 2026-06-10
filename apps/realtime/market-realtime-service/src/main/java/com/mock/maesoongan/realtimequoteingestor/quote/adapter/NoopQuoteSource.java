@@ -24,11 +24,19 @@ public class NoopQuoteSource implements QuoteSource {
     }
 
     @Override
-    public void subscribe(List<String> stockCodes) {
+    public void subscribePrices(List<String> stockCodes) {
     }
 
     @Override
-    public void unsubscribe(List<String> stockCodes) {
+    public void unsubscribePrices(List<String> stockCodes) {
+    }
+
+    @Override
+    public void subscribeOrderbooks(List<String> stockCodes) {
+    }
+
+    @Override
+    public void unsubscribeOrderbooks(List<String> stockCodes) {
     }
 
     @Override

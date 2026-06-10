@@ -38,7 +38,8 @@ public class KisQuoteSource implements QuoteSource {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ScheduledExecutorService reconnectExecutor;
-    private final Set<String> subscribedCodes = ConcurrentHashMap.newKeySet();
+    private final Set<String> subscribedPriceCodes = ConcurrentHashMap.newKeySet();
+    private final Set<String> subscribedOrderbookCodes = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedIndexes = ConcurrentHashMap.newKeySet();
     private final Map<String, KisRealtimeParser.EncryptionContext> encryptionContexts = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -89,28 +90,54 @@ public class KisQuoteSource implements QuoteSource {
     }
 
     @Override
-    public void subscribe(List<String> stockCodes) {
+    public void subscribePrices(List<String> stockCodes) {
         List<String> newCodes = stockCodes.stream()
                 .map(String::trim)
                 .filter(code -> !code.isBlank())
                 .distinct()
-                .filter(subscribedCodes::add)
+                .filter(subscribedPriceCodes::add)
                 .toList();
         if (connected.get()) {
-            newCodes.forEach(code -> sendSubscriptions(code, "1"));
+            newCodes.forEach(code -> sendSubscription(properties.priceTrId(), code, "1"));
         }
     }
 
     @Override
-    public void unsubscribe(List<String> stockCodes) {
+    public void unsubscribePrices(List<String> stockCodes) {
         List<String> removedCodes = stockCodes.stream()
                 .map(String::trim)
                 .filter(code -> !code.isBlank())
                 .distinct()
-                .filter(subscribedCodes::remove)
+                .filter(subscribedPriceCodes::remove)
                 .toList();
         if (connected.get()) {
-            removedCodes.forEach(code -> sendSubscriptions(code, "2"));
+            removedCodes.forEach(code -> sendSubscription(properties.priceTrId(), code, "2"));
+        }
+    }
+
+    @Override
+    public void subscribeOrderbooks(List<String> stockCodes) {
+        List<String> newCodes = stockCodes.stream()
+                .map(String::trim)
+                .filter(code -> !code.isBlank())
+                .distinct()
+                .filter(subscribedOrderbookCodes::add)
+                .toList();
+        if (connected.get()) {
+            newCodes.forEach(code -> sendSubscription(properties.orderbookTrId(), code, "1"));
+        }
+    }
+
+    @Override
+    public void unsubscribeOrderbooks(List<String> stockCodes) {
+        List<String> removedCodes = stockCodes.stream()
+                .map(String::trim)
+                .filter(code -> !code.isBlank())
+                .distinct()
+                .filter(subscribedOrderbookCodes::remove)
+                .toList();
+        if (connected.get()) {
+            removedCodes.forEach(code -> sendSubscription(properties.orderbookTrId(), code, "2"));
         }
     }
 
@@ -166,13 +193,9 @@ public class KisQuoteSource implements QuoteSource {
     private void onConnected() {
         connected.set(true);
         reconnectAttempt.set(0);
-        subscribedCodes.forEach(code -> sendSubscriptions(code, "1"));
+        subscribedPriceCodes.forEach(code -> sendSubscription(properties.priceTrId(), code, "1"));
+        subscribedOrderbookCodes.forEach(code -> sendSubscription(properties.orderbookTrId(), code, "1"));
         subscribedIndexes.forEach(market -> sendIndexSubscription(market, "1"));
-    }
-
-    private void sendSubscriptions(String stockCode, String trType) {
-        sendSubscription(properties.priceTrId(), stockCode, trType);
-        sendSubscription(properties.orderbookTrId(), stockCode, trType);
     }
 
     private void sendSubscription(String trId, String stockCode, String trType) {

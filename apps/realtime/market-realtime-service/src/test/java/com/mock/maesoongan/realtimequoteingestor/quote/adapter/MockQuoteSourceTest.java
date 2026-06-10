@@ -18,19 +18,35 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MockQuoteSourceTest {
 
     @Test
-    void emitsPriceAndOrderbookForSubscribedStockCodes() throws InterruptedException {
+    void emitsPriceForSubscribedPriceCodes() throws InterruptedException {
         MockQuoteSource quoteSource = new MockQuoteSource(10);
-        CapturingQuoteEventHandler handler = new CapturingQuoteEventHandler();
+        CapturingQuoteEventHandler handler = new CapturingQuoteEventHandler(1);
 
         try {
             quoteSource.start(handler);
-            quoteSource.subscribe(List.of("005930"));
+            quoteSource.subscribePrices(List.of("005930"));
 
             assertTrue(handler.await(1, TimeUnit.SECONDS));
             assertTrue(quoteSource.isConnected());
             assertNotNull(handler.priceEvent.get());
-            assertNotNull(handler.orderbookEvent.get());
             assertEquals("005930", handler.priceEvent.get().code());
+        } finally {
+            quoteSource.stop();
+        }
+    }
+
+    @Test
+    void emitsOrderbookForSubscribedOrderbookCodes() throws InterruptedException {
+        MockQuoteSource quoteSource = new MockQuoteSource(10);
+        CapturingQuoteEventHandler handler = new CapturingQuoteEventHandler(1);
+
+        try {
+            quoteSource.start(handler);
+            quoteSource.subscribeOrderbooks(List.of("005930"));
+
+            assertTrue(handler.await(1, TimeUnit.SECONDS));
+            assertTrue(quoteSource.isConnected());
+            assertNotNull(handler.orderbookEvent.get());
             assertEquals("005930", handler.orderbookEvent.get().code());
             assertEquals(10, handler.orderbookEvent.get().asks().size());
             assertEquals(10, handler.orderbookEvent.get().bids().size());
