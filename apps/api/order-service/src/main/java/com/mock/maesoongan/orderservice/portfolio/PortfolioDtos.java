@@ -76,6 +76,7 @@ public final class PortfolioDtos {
     }
 
     public record SeedMoneyResetRequest(
+            Long contestId,
             boolean holdingsAndCashResetAgreed,
             boolean irreversibleAgreed
     ) {

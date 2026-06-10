@@ -85,7 +85,6 @@ public class ContestService {
                     long participantCount = rs.getLong("participant_count");
                     JoinAvailability availability = joinAvailability(
                             rs.getString("status"),
-                            toLocalDateTime(rs.getTimestamp("start_at")),
                             maxParticipants == 0 ? null : maxParticipants,
                             participantCount,
                             joined
@@ -119,7 +118,7 @@ public class ContestService {
 
         boolean joined = isJoined(contestId, memberId);
         long participantCount = participantCount(contestId);
-        JoinAvailability availability = joinAvailability(contest.status(), contest.startAt(), contest.maxParticipants(), participantCount, joined);
+        JoinAvailability availability = joinAvailability(contest.status(), contest.maxParticipants(), participantCount, joined);
         PortfolioRow portfolio = findPortfolio(contestId, memberId);
         RankingRow ranking = findRanking(contestId, memberId);
 
@@ -160,14 +159,19 @@ public class ContestService {
         }
 
         long participantCount = participantCount(contestId);
-        JoinAvailability availability = joinAvailability(contest.status(), contest.startAt(), contest.maxParticipants(), participantCount, false);
+        JoinAvailability availability = joinAvailability(contest.status(), contest.maxParticipants(), participantCount, false);
         if (!availability.joinable()) {
             throw badRequest(availability.reason());
         }
 
+        // 재참가(이전에 나가 WITHDRAWN 상태로 남은 행)도 처리: 유니크 제약 충돌 시 기존 행을 ACTIVE로 갱신
         jdbcTemplate.update("""
                 insert into contest_participation (contest_id, member_id, seed_money, status, joined_at)
                 values (?, ?, ?, 'ACTIVE', ?)
+                on duplicate key update
+                    status = 'ACTIVE',
+                    seed_money = values(seed_money),
+                    joined_at = values(joined_at)
                 """, contestId, memberId, contest.seedMoney(), LocalDateTime.now());
 
         return new ContestJoinResponse(
@@ -624,7 +628,6 @@ public class ContestService {
 
     private JoinAvailability joinAvailability(
             String status,
-            LocalDateTime startAt,
             Integer maxParticipants,
             long participantCount,
             boolean joined
@@ -632,11 +635,9 @@ public class ContestService {
         if (joined) {
             return new JoinAvailability(false, "ALREADY_JOINED");
         }
-        if (!"SCHEDULED".equals(status)) {
-            return new JoinAvailability(false, "CONTEST_NOT_JOINABLE_STATUS");
-        }
-        if (!LocalDateTime.now().isBefore(startAt)) {
-            return new JoinAvailability(false, "CONTEST_ALREADY_STARTED");
+        // 진행중(ACTIVE, CLOSING_SOON) 대회만 참가 가능. 시작 전(SCHEDULED)·종료(ENDED) 대회는 불가.
+        if (!"ACTIVE".equals(status) && !"CLOSING_SOON".equals(status)) {
+            return new JoinAvailability(false, "SCHEDULED".equals(status) ? "CONTEST_NOT_STARTED" : "CONTEST_NOT_JOINABLE_STATUS");
         }
         if (maxParticipants != null && participantCount >= maxParticipants) {
             return new JoinAvailability(false, "MAX_PARTICIPANTS_EXCEEDED");

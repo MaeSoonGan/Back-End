@@ -14,6 +14,8 @@ import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.SeedMoneyResetRe
 import com.mock.maesoongan.orderservice.portfolio.PortfolioDtos.SeedMoneyResetResponse;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioRepository.PortfolioRow;
 import com.mock.maesoongan.orderservice.portfolio.PortfolioRepository.StockPriceRow;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,7 @@ import java.util.Locale;
 @Service
 public class PortfolioService {
 
+    private static final Logger log = LoggerFactory.getLogger(PortfolioService.class);
     private static final long DEFAULT_CONTEST_ID = 0L;
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final BigDecimal DEFAULT_SEED_MONEY = BigDecimal.valueOf(10_000_000L);
@@ -77,24 +80,26 @@ public class PortfolioService {
     }
 
     @Transactional(readOnly = true)
-    public List<HoldingItem> getHoldings(long memberId) {
-        PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
+    public List<HoldingItem> getHoldings(long memberId, Long contestId) {
+        long resolvedContestId = resolveContestId(contestId);
+        PortfolioRow portfolio = findPortfolio(memberId, resolvedContestId);
         return parseHoldings(portfolio.holdingsJson())
                 .stream()
-                .map(holding -> toHoldingItem(memberId, DEFAULT_CONTEST_ID, holding))
+                .map(holding -> toHoldingItem(memberId, resolvedContestId, holding))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public HoldingDetailResponse getHolding(long memberId, String stockCode) {
+    public HoldingDetailResponse getHolding(long memberId, String stockCode, Long contestId) {
+        long resolvedContestId = resolveContestId(contestId);
         String normalizedCode = stockCode.trim().toUpperCase(Locale.ROOT);
-        HoldingSnapshot holding = parseHoldings(findPortfolio(memberId, DEFAULT_CONTEST_ID).holdingsJson())
+        HoldingSnapshot holding = parseHoldings(findPortfolio(memberId, resolvedContestId).holdingsJson())
                 .stream()
                 .filter(item -> normalizedCode.equals(item.stockCode()))
                 .findFirst()
                 .orElse(new HoldingSnapshot(normalizedCode, 0));
 
-        long pendingSellQuantity = portfolioRepository.countPendingSellQuantity(memberId, DEFAULT_CONTEST_ID, normalizedCode);
+        long pendingSellQuantity = portfolioRepository.countPendingSellQuantity(memberId, resolvedContestId, normalizedCode);
         long availableQuantity = Math.max(0, holding.quantity() - pendingSellQuantity);
         StockPriceRow stock = portfolioRepository.findStockPrice(normalizedCode)
                 .orElse(new StockPriceRow(normalizedCode, normalizedCode, BigDecimal.ZERO));
@@ -109,18 +114,17 @@ public class PortfolioService {
 
     @Transactional(readOnly = true)
     public List<ProfitHistoryItem> getProfitHistory(long memberId, String period) {
-        PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
         int days = daysByPeriod(period);
         LocalDate today = LocalDate.now(SEOUL);
-        List<ProfitHistoryItem> items = new ArrayList<>();
+        LocalDate from = today.minusDays(days - 1L);
 
-        for (int i = days - 1; i >= 0; i--) {
-            items.add(new ProfitHistoryItem(
-                    today.minusDays(i),
-                    value(portfolio.profitRate()),
-                    value(portfolio.totalAsset())
-            ));
-        }
+        List<ProfitHistoryItem> items = new ArrayList<>();
+        portfolioRepository.findDailyProfitHistory(memberId, DEFAULT_CONTEST_ID, from, today)
+                .forEach(row -> items.add(new ProfitHistoryItem(
+                        row.snapshotDate(),
+                        value(row.profitRate()),
+                        value(row.totalAsset())
+                )));
         return items;
     }
 
@@ -150,11 +154,18 @@ public class PortfolioService {
     public SeedMoneyResetResponse resetSeedMoney(long memberId, SeedMoneyResetRequest request) {
         validateResetRequest(request);
 
+        // 초기화 대상 계좌: 0이면 일반계좌(기본 시드머니), 그 외엔 해당 대회 계좌(대회 시드머니)
+        long contestId = resolveContestId(request.contestId());
+        BigDecimal seedMoney = contestId == DEFAULT_CONTEST_ID
+                ? DEFAULT_SEED_MONEY
+                : portfolioRepository.findContestSeedMoney(contestId)
+                        .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "CONTEST_NOT_FOUND", "Contest not found"));
+
         ZonedDateTime now = ZonedDateTime.now(SEOUL);
         LocalDate resetDate = now.toLocalDate();
         LocalDateTime resetAt = now.toLocalDateTime();
         LocalDateTime nextResetAvailableAt = resetDate.plusDays(1).atStartOfDay();
-        String resetKey = resetKey(memberId, DEFAULT_CONTEST_ID, resetDate);
+        String resetKey = resetKey(memberId, contestId, resetDate);
         Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
                 resetKey,
                 resetAt.toString(),
@@ -165,23 +176,23 @@ public class PortfolioService {
         }
 
         try {
-            BigDecimal previousTotalAsset = portfolioRepository.findPortfolio(memberId, DEFAULT_CONTEST_ID)
+            BigDecimal previousTotalAsset = portfolioRepository.findPortfolio(memberId, contestId)
                     .map(portfolio -> totalAsset(
                             value(portfolio.cashBalance()),
                             value(portfolio.stockEvaluationAmount()),
                             portfolio.totalAsset()
                     ))
                     .orElse(BigDecimal.ZERO);
-            int canceledOrderCount = portfolioRepository.cancelOpenOrdersForReset(memberId, DEFAULT_CONTEST_ID, resetAt);
+            int canceledOrderCount = portfolioRepository.cancelOpenOrdersForReset(memberId, contestId, resetAt);
 
-            portfolioRepository.resetPortfolio(memberId, DEFAULT_CONTEST_ID, DEFAULT_SEED_MONEY, resetAt);
-            evictBalanceCache(memberId, DEFAULT_CONTEST_ID);
+            portfolioRepository.resetPortfolio(memberId, contestId, seedMoney, resetAt);
+            evictBalanceCache(memberId, contestId);
 
             return new SeedMoneyResetResponse(
-                    DEFAULT_SEED_MONEY,
+                    seedMoney,
                     previousTotalAsset,
-                    DEFAULT_SEED_MONEY,
-                    DEFAULT_SEED_MONEY,
+                    seedMoney,
+                    seedMoney,
                     0,
                     canceledOrderCount,
                     resetDate,
@@ -192,6 +203,10 @@ public class PortfolioService {
             redisTemplate.delete(resetKey);
             throw exception;
         }
+    }
+
+    private long resolveContestId(Long contestId) {
+        return contestId == null ? DEFAULT_CONTEST_ID : contestId;
     }
 
     private PortfolioRow findPortfolio(long memberId, long contestId) {
@@ -251,13 +266,16 @@ public class PortfolioService {
     }
 
     private BigDecimal availableBalance(long memberId, long contestId, BigDecimal fallback) {
-        String cached = redisTemplate.opsForValue().get("balance:" + memberId + ":" + contestId);
-        if (cached != null && !cached.isBlank()) {
-            try {
+        try {
+            String cached = redisTemplate.opsForValue().get("balance:" + memberId + ":" + contestId);
+            if (cached != null && !cached.isBlank()) {
                 return new BigDecimal(cached);
-            } catch (NumberFormatException ignored) {
-                return value(fallback);
             }
+        } catch (NumberFormatException ignored) {
+            // 캐시값 형식 오류 → DB값 사용 (Redis 장애 아님, 로그 불필요)
+        } catch (Exception e) {
+            // Redis 연결 실패/타임아웃 → DB값으로 폴백 (서비스 중단 방지). 모니터링 위해 WARN 로깅.
+            log.warn("Redis 사용 불가 (balance:{}:{}) → DB값으로 폴백. cause={}", memberId, contestId, e.toString());
         }
         return value(fallback);
     }

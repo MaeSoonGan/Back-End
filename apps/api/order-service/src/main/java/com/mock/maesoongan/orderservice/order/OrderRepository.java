@@ -152,12 +152,13 @@ public class OrderRepository {
         return count == null ? 0 : count;
     }
 
-    public List<TradeRow> findTrades(long memberId, LocalDate from, LocalDate to, String side, int limit, int offset) {
+    public List<TradeRow> findTrades(long memberId, Long contestId, LocalDate from, LocalDate to, String side, int limit, int offset) {
         return jdbcTemplate.query("""
                 select trade_id, order_id, member_id, contest_id, stock_id, stock_code, stock_name, side,
                        executed_price, executed_quantity, executed_amount, executed_at
                 from trade_history
                 where member_id = ?
+                  and (? is null or contest_id = ?)
                   and (? = 'ALL' or side = ?)
                   and executed_at >= ? and executed_at < ?
                 order by executed_at desc, trade_id desc
@@ -176,34 +177,36 @@ public class OrderRepository {
                 rs.getLong("executed_quantity"),
                 rs.getBigDecimal("executed_amount"),
                 toLocalDateTime(rs.getTimestamp("executed_at"))
-        ), memberId, side, side, from.atStartOfDay(), to.plusDays(1).atStartOfDay(), limit, offset);
+        ), memberId, contestId, contestId, side, side, from.atStartOfDay(), to.plusDays(1).atStartOfDay(), limit, offset);
     }
 
-    public int countTrades(long memberId, LocalDate from, LocalDate to, String side) {
+    public int countTrades(long memberId, Long contestId, LocalDate from, LocalDate to, String side) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*)
                 from trade_history
                 where member_id = ?
+                  and (? is null or contest_id = ?)
                   and (? = 'ALL' or side = ?)
                   and executed_at >= ? and executed_at < ?
-                """, Integer.class, memberId, side, side, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+                """, Integer.class, memberId, contestId, contestId, side, side, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
         return count == null ? 0 : count;
     }
 
-    public TradeSummaryRow summarizeTrades(long memberId, LocalDate from, LocalDate to, String side) {
+    public TradeSummaryRow summarizeTrades(long memberId, Long contestId, LocalDate from, LocalDate to, String side) {
         return jdbcTemplate.queryForObject("""
                 select coalesce(sum(case when side = 'BUY' then executed_quantity else 0 end), 0) as buy_quantity,
                        coalesce(sum(case when side = 'SELL' then executed_quantity else 0 end), 0) as sell_quantity,
                        coalesce(sum(executed_amount), 0) as total_amount
                 from trade_history
                 where member_id = ?
+                  and (? is null or contest_id = ?)
                   and (? = 'ALL' or side = ?)
                   and executed_at >= ? and executed_at < ?
                 """, (rs, rowNum) -> new TradeSummaryRow(
                 rs.getLong("buy_quantity"),
                 rs.getLong("sell_quantity"),
                 rs.getBigDecimal("total_amount")
-        ), memberId, side, side, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
+        ), memberId, contestId, contestId, side, side, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
     }
 
     private OrderRow toOrderRow(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
