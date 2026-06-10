@@ -7,6 +7,8 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-type: "external"
     service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
     service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+    service.beta.kubernetes.io/aws-load-balancer-private-ipv4-addresses: "10.14.110.239"
+    service.beta.kubernetes.io/aws-load-balancer-subnets: "subnet-05c7cf27d8a20289a"
 spec:
   type: LoadBalancer
   selector:
