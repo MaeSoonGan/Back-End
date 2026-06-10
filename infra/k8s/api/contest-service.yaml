@@ -20,6 +20,10 @@ spec:
       app: contest-service
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8082"
       labels:
         app: contest-service
     spec:

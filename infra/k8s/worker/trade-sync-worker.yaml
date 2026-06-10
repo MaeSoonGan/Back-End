@@ -1,13 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: trade-sync-worker
   namespace: app
   annotations:
     configmap.reloader.stakater.com/reload: maesoongan-api-config
-    secret.reloader.stakater.com/reload: auth-service-secret
+    secret.reloader.stakater.com/reload: trade-sync-worker-secret
   labels:
-    app: auth-service
+    app: trade-sync-worker
 spec:
   replicas: 1
   strategy:
@@ -17,43 +17,42 @@ spec:
       maxUnavailable: 1
   selector:
     matchLabels:
-      app: auth-service
+      app: trade-sync-worker
   template:
     metadata:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/actuator/prometheus"
-        prometheus.io/port: "8081"
-
+        prometheus.io/port: "8088"
       labels:
-        app: auth-service
+        app: trade-sync-worker
     spec:
       nodeSelector:
-        role: service
+        role: worker
       containers:
-        - name: auth-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/auth-service:0056e1f26c91aa450046721d7faf93d5df0d1309
+        - name: trade-sync-worker
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/trade-sync-worker:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8081
+            - containerPort: 8088
           env:
-            - name: AUTH_SERVICE_PORT
-              value: "8081"
+            - name: TRADE_SYNC_WORKER_PORT
+              value: "8088"
           envFrom:
             - configMapRef:
                 name: maesoongan-api-config
             - secretRef:
-                name: auth-service-secret
+                name: trade-sync-worker-secret
           readinessProbe:
             httpGet:
-              path: /api/health
-              port: 8081
+              path: /actuator/health/readiness
+              port: 8088
             initialDelaySeconds: 20
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /api/health
-              port: 8081
+              path: /actuator/health/liveness
+              port: 8088
             initialDelaySeconds: 60
             periodSeconds: 20
           resources:
@@ -67,15 +66,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: trade-sync-worker
   namespace: app
   labels:
-    app: auth-service
+    app: trade-sync-worker
 spec:
   type: ClusterIP
   selector:
-    app: auth-service
+    app: trade-sync-worker
   ports:
     - name: http
-      port: 8081
-      targetPort: 8081
+      port: 8088
+      targetPort: 8088
