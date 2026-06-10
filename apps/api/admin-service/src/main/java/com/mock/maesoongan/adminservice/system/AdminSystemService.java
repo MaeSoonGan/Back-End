@@ -26,8 +26,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.StringJoiner;
 
 @Service
 public class AdminSystemService {
@@ -253,6 +255,79 @@ public class AdminSystemService {
                 args.toArray());
 
         return new PageResponse<>(content, total, totalPages(total, size), page);
+    }
+
+    @Transactional(readOnly = true)
+    public String exportAuditLogs(String keyword, LocalDate startDate, LocalDate endDate, String type, Long adminId) {
+        AuditFilter filter = auditFilter(keyword, startDate, endDate, type, adminId);
+        List<AuditLogItem> rows = jdbcTemplate.query("""
+                        select al.id,
+                               al.action,
+                               al.target_type,
+                               al.target_id,
+                               al.reason,
+                               al.admin_id,
+                               coalesce(a.nickname, a.login_id, 'admin') as admin_name,
+                               al.ip_address,
+                               al.created_at
+                        from audit_log al
+                        left join admin a on a.id = al.admin_id
+                        %s
+                        order by al.created_at desc, al.id desc
+                        """.formatted(filter.whereClause()),
+                (rs, rowNum) -> {
+                    String action = rs.getString("action");
+                    String targetType = rs.getString("target_type");
+                    return new AuditLogItem(
+                            rs.getLong("id"),
+                            auditType(action, targetType),
+                            action,
+                            targetType,
+                            rs.getObject("target_id", Long.class),
+                            rs.getString("reason"),
+                            rs.getObject("admin_id", Long.class),
+                            rs.getString("admin_name"),
+                            rs.getString("ip_address"),
+                            toLocalDateTime(rs.getTimestamp("created_at"))
+                    );
+                },
+                filter.args().toArray());
+
+        StringBuilder csv = new StringBuilder("logId,type,action,targetType,targetId,detail,adminId,adminName,ipAddress,createdAt\n");
+        for (AuditLogItem row : rows) {
+            csv.append(csvLine(Arrays.asList(
+                    row.logId(),
+                    row.type(),
+                    row.action(),
+                    row.targetType(),
+                    row.targetId(),
+                    row.detail(),
+                    row.adminId(),
+                    row.adminName(),
+                    row.ipAddress(),
+                    row.createdAt()
+            )));
+        }
+        return csv.toString();
+    }
+
+    private String csvLine(List<Object> values) {
+        StringJoiner joiner = new StringJoiner(",");
+        for (Object value : values) {
+            joiner.add(csvValue(value));
+        }
+        return joiner + "\n";
+    }
+
+    private String csvValue(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String text = String.valueOf(value);
+        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) {
+            return "\"" + text.replace("\"", "\"\"") + "\"";
+        }
+        return text;
     }
 
     @Transactional(readOnly = true)

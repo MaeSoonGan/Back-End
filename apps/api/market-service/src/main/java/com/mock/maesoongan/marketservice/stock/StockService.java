@@ -33,6 +33,7 @@ public class StockService {
                 .orElseThrow(() -> notFound("Stock not found"));
 
         return new StockPriceResponse(
+                row.stockId(),
                 row.code(),
                 row.name(),
                 row.currentPrice(),
@@ -76,6 +77,7 @@ public class StockService {
         List<StockSearchItem> stocks = marketDataRepository.searchStocks(normalizedKeyword, normalizedMarket, memberId)
                 .stream()
                 .map(row -> new StockSearchItem(
+                        row.stockId(),
                         row.stockCode(),
                         row.stockName(),
                         row.market(),

@@ -69,12 +69,13 @@ public class OrderController {
     @Operation(summary = "Get trade history")
     @GetMapping("/trades")
     public ApiResponse<TradeListResponse> getTrades(
+            @RequestParam(required = false) Long contestId,
             @RequestParam(required = false) LocalDate from,
             @RequestParam(required = false) LocalDate to,
             @RequestParam(required = false) String side,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size
     ) {
-        return ApiResponse.success(orderService.getTrades(currentMemberProvider.memberId(), from, to, side, page, size));
+        return ApiResponse.success(orderService.getTrades(currentMemberProvider.memberId(), contestId, from, to, side, page, size));
     }
 }

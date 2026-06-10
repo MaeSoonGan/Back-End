@@ -18,6 +18,9 @@ import com.mock.maesoongan.adminservice.system.AdminSystemDtos.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -108,6 +112,26 @@ public class AdminSystemController {
     @GetMapping("/audit-logs/{logId}")
     public ApiResponse<AuditLogDetailResponse> getAuditLog(@PathVariable long logId) {
         return ApiResponse.success(adminSystemService.getAuditLog(logId));
+    }
+
+    @Operation(summary = "Export filtered audit logs as CSV")
+    @GetMapping("/audit-logs/export")
+    public ResponseEntity<byte[]> exportAuditLogs(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "ALL") String type,
+            @RequestParam(required = false) Long adminId
+    ) {
+        return csv("audit-logs.csv", adminSystemService.exportAuditLogs(keyword, startDate, endDate, type, adminId));
+    }
+
+    private ResponseEntity<byte[]> csv(String filename, String csv) {
+        byte[] body = ("﻿" + csv).getBytes(StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(body);
     }
 
     @Operation(summary = "Force cancel abnormal order")

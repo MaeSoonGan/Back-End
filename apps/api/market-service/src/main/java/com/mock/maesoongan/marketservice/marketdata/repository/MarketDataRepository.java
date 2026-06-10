@@ -23,7 +23,8 @@ public class MarketDataRepository {
 
     public Optional<StockPriceRow> findStockPrice(String code) {
         return queryOne("""
-                select s.code,
+                select s.id,
+                       s.code,
                        s.name,
                        s.market,
                        p.current_price,
@@ -35,6 +36,7 @@ public class MarketDataRepository {
                 join stock_price_snapshot p on p.stock_code = s.code
                 where s.code = ? and s.status = 'ACTIVE'
                 """, (rs, rowNum) -> new StockPriceRow(
+                rs.getLong("id"),
                 rs.getString("code"),
                 rs.getString("name"),
                 rs.getString("market"),
@@ -90,7 +92,8 @@ public class MarketDataRepository {
     public List<StockSearchRow> searchStocks(String keyword, String market, Long memberId) {
         String likeKeyword = "%" + keyword + "%";
         return jdbcTemplate.query("""
-                select s.code,
+                select s.id,
+                       s.code,
                        s.name,
                        s.market,
                        coalesce(p.current_price, 0) as current_price,
@@ -108,6 +111,7 @@ public class MarketDataRepository {
                 order by s.name asc, s.code asc
                 limit 50
                 """, (rs, rowNum) -> new StockSearchRow(
+                rs.getLong("id"),
                 rs.getString("code"),
                 rs.getString("name"),
                 rs.getString("market"),
@@ -260,6 +264,7 @@ public class MarketDataRepository {
     }
 
     public record StockPriceRow(
+            long stockId,
             String code,
             String name,
             String market,
@@ -291,6 +296,7 @@ public class MarketDataRepository {
     }
 
     public record StockSearchRow(
+            long stockId,
             String stockCode,
             String stockName,
             String market,
