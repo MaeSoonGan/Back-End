@@ -75,6 +75,85 @@ public class MarketDataRepository {
         ), code);
     }
 
+    public Optional<Long> findActiveStockId(String code) {
+        return queryOne("""
+                select id
+                from stock
+                where code = ? and status = 'ACTIVE'
+                """, (rs, rowNum) -> rs.getLong("id"), code);
+    }
+
+    public DailyPriceCoverage findDailyPriceCoverage(String code, LocalDate from, LocalDate to) {
+        return jdbcTemplate.queryForObject("""
+                select min(trade_date) as first_trade_date,
+                       max(trade_date) as last_trade_date,
+                       count(*) as row_count
+                from stock_daily_price
+                where stock_code = ?
+                  and trade_date between ? and ?
+                """, (rs, rowNum) -> new DailyPriceCoverage(
+                toLocalDate(rs.getDate("first_trade_date")),
+                toLocalDate(rs.getDate("last_trade_date")),
+                rs.getInt("row_count")
+        ), code, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    public List<StockDailyPriceRow> findDailyPrices(String code, LocalDate from, LocalDate to) {
+        return jdbcTemplate.query("""
+                select d.stock_code,
+                       d.trade_date,
+                       d.open_price,
+                       d.high_price,
+                       d.low_price,
+                       d.close_price,
+                       d.prev_close_price,
+                       d.volume
+                from stock_daily_price d
+                join stock s on s.code = d.stock_code
+                where d.stock_code = ?
+                  and d.trade_date between ? and ?
+                  and s.status = 'ACTIVE'
+                order by d.trade_date asc
+                """, (rs, rowNum) -> new StockDailyPriceRow(
+                rs.getString("stock_code"),
+                toLocalDate(rs.getDate("trade_date")),
+                rs.getBigDecimal("open_price"),
+                rs.getBigDecimal("high_price"),
+                rs.getBigDecimal("low_price"),
+                rs.getBigDecimal("close_price"),
+                rs.getBigDecimal("prev_close_price"),
+                rs.getLong("volume")
+        ), code, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    public void upsertDailyPrices(List<StockDailyPriceUpsert> rows) {
+        for (StockDailyPriceUpsert row : rows) {
+            jdbcTemplate.update("""
+                    insert into stock_daily_price
+                        (stock_id, stock_code, trade_date, open_price, high_price, low_price, close_price, prev_close_price, volume, updated_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+                    on duplicate key update
+                        stock_id = values(stock_id),
+                        open_price = values(open_price),
+                        high_price = values(high_price),
+                        low_price = values(low_price),
+                        close_price = values(close_price),
+                        prev_close_price = values(prev_close_price),
+                        volume = values(volume),
+                        updated_at = current_timestamp
+                    """,
+                    row.stockId(),
+                    row.code(),
+                    Date.valueOf(row.tradeDate()),
+                    row.openPrice(),
+                    row.highPrice(),
+                    row.lowPrice(),
+                    row.closePrice(),
+                    row.prevClosePrice(),
+                    row.volume());
+        }
+    }
+
     public List<OrderbookLevelRow> findOrderbookLevels(String code, String side) {
         return jdbcTemplate.query("""
                 select price, quantity, level_no
@@ -277,6 +356,26 @@ public class MarketDataRepository {
     }
 
     public record StockDailyPriceRow(
+            String code,
+            LocalDate tradeDate,
+            BigDecimal openPrice,
+            BigDecimal highPrice,
+            BigDecimal lowPrice,
+            BigDecimal closePrice,
+            BigDecimal prevClosePrice,
+            long volume
+    ) {
+    }
+
+    public record DailyPriceCoverage(
+            LocalDate firstTradeDate,
+            LocalDate lastTradeDate,
+            int rowCount
+    ) {
+    }
+
+    public record StockDailyPriceUpsert(
+            long stockId,
             String code,
             LocalDate tradeDate,
             BigDecimal openPrice,

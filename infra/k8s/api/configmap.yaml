@@ -25,9 +25,16 @@ data:
   SPRING_MAIL_SMTP_STARTTLS_ENABLE: "false"
   SPRING_MAIL_SMTP_SSL_ENABLE: "true"
   KIS_BASE_URL: https://openapivts.koreainvestment.com:29443
+  KIS_TOKEN_URL: https://openapivts.koreainvestment.com:29443/oauth2/tokenP
   KIS_ENVIRONMENT: demo
   KIS_ACCOUNT_PRODUCT_CODE: "01"
   KIS_CUSTOMER_TYPE: P
   KIS_EXCHANGE_ID: KRX
   KIS_TOKEN_CACHE_TTL: 23h
   KIS_REQUEST_TIMEOUT: 5s
+  KIS_DAILY_CHART_PATH: /uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice
+  KIS_DAILY_CHART_TR_ID: FHKST03010100
+  KIS_DAILY_CHART_MARKET_DIV_CODE: J
+  KIS_DAILY_CHART_ADJUSTED_PRICE: "0"
+  CHART_SYNC_ENABLED: "true"
+  CHART_KIS_WINDOW_DAYS: "120"

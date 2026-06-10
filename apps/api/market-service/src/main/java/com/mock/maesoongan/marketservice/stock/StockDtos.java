@@ -1,6 +1,7 @@
 package com.mock.maesoongan.marketservice.stock;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 public final class StockDtos {
@@ -53,6 +54,25 @@ public final class StockDtos {
             BigDecimal changeRate,
             String logoUrl,
             boolean isWatchlisted
+    ) {
+    }
+
+    public record StockChartResponse(
+            String code,
+            String period,
+            LocalDate from,
+            LocalDate to,
+            List<StockChartItem> items
+    ) {
+    }
+
+    public record StockChartItem(
+            LocalDate date,
+            BigDecimal open,
+            BigDecimal high,
+            BigDecimal low,
+            BigDecimal close,
+            long volume
     ) {
     }
 }
