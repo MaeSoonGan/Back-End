@@ -11,6 +11,7 @@ public record QuoteIngestionStatus(
         LocalDateTime lastReceivedAt,
         long priceEventCount,
         long orderbookEventCount,
+        long indexEventCount,
         String lastError,
         LocalDateTime checkedAt
 ) {

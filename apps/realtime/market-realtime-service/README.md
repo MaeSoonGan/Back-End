@@ -1,6 +1,6 @@
 # MaeSoonGan Market Realtime Service
 
-한국투자증권 KIS 실시간 WebSocket API에서 국내 주식 현재가와 호가를 수집하고, Redis/ElastiCache와 MTS WebSocket Gateway로 전달하는 실시간 시세 처리 서비스입니다.
+한국투자증권 KIS 실시간 WebSocket API에서 국내 주식 현재가, 호가, 지수를 수집하고, Redis/ElastiCache와 MTS WebSocket Gateway로 전달하는 실시간 시세 처리 서비스입니다.
 
 Kafka 연동은 추후 온프레미스 Kafka 준비 이후 붙일 수 있도록 포트만 분리해두었고, 현재 구현은 KIS 연동, Redis 적재, REST 조회, WebSocket 구독/푸시까지 포함합니다.
 
@@ -8,8 +8,9 @@ Kafka 연동은 추후 온프레미스 Kafka 준비 이후 붙일 수 있도록 
 
 - KIS 실시간 현재가 TR 수신
 - KIS 실시간 호가 TR 수신
-- 최신 현재가/호가를 Redis 또는 ElastiCache에 저장
-- MTS 클라이언트가 `/ws/market`으로 구독한 종목의 시세를 실시간 push
+- KIS 실시간 지수 TR 수신
+- 최신 현재가/호가/지수를 Redis 또는 ElastiCache에 저장
+- MTS 클라이언트가 `/ws/market`으로 구독한 종목 시세와 시장 지수를 실시간 push
 - 초기 화면이나 내부 서비스가 REST API로 최신 시세 조회
 - 온프레미스 체결엔진이나 계정계가 Redis에서 최신 시세 조회 가능
 - KIS 종목 마스터 `.mst` 파일을 Redis에 적재해 종목코드와 종목명을 매핑
@@ -23,12 +24,13 @@ Kafka 연동은 추후 온프레미스 Kafka 준비 이후 붙일 수 있도록 
 - KIS 실시간 WebSocket 연결 구현
 - KIS 현재가 `H0STCNT0` 구독/해제 구현
 - KIS 호가 `H0STASP0` 구독/해제 구현
+- KIS 지수 `H0UPCNT0` 구독/해제 구현
 - KIS `|`, `^` 구분 payload 파싱 구현
 - Redis/ElastiCache 최신 시세 저장 구현
 - Redis 기반 최신 시세 REST 조회 구현
 - `/ws/market` WebSocket Gateway 구현
-- 클라이언트 세션별 종목 구독/해제 처리
-- 종목별 첫 구독 시 KIS 구독, 마지막 구독 해제 시 KIS 해제 처리
+- 클라이언트 세션별 현재가/호가/지수 구독/해제 처리
+- 종목 또는 지수별 첫 구독 시 KIS 구독, 마지막 구독 해제 시 KIS 해제 처리
 - KIS 종목 마스터 파일 기반 Redis 종목명 캐시 적재 구현
 - mock 시세 소스 구현
 - 테스트 코드 추가
@@ -79,6 +81,7 @@ GET /api/realtime/status
 - `lastReceivedAt`: 마지막 시세 수신 시각
 - `priceEventCount`: 현재가 이벤트 처리 건수
 - `orderbookEventCount`: 호가 이벤트 처리 건수
+- `indexEventCount`: 지수 이벤트 처리 건수
 - `lastError`: 마지막 오류 메시지
 
 ### Redis Cache Status
@@ -87,10 +90,11 @@ GET /api/realtime/status
 GET /api/realtime/cache/status
 GET /api/realtime/cache/price/{stockCode}
 GET /api/realtime/cache/orderbook/{stockCode}
+GET /api/realtime/cache/index/{market}
 GET /api/realtime/cache/stock-master
 ```
 
-Redis 연결 상태, 최신 현재가/호가, 종목 마스터 적재 상태를 확인합니다.
+Redis 연결 상태, 최신 현재가/호가/지수, 종목 마스터 적재 상태를 확인합니다.
 
 ### Market REST API
 
@@ -110,22 +114,66 @@ GET /api/market/status
 ws://localhost:8087/ws/market
 ```
 
-구독 요청:
+하나의 WebSocket URL에서 현재가, 호가, 지수를 모두 구독합니다. `SUBSCRIBE`와 `UNSUBSCRIBE`는 기존 호환성을 위해 현재가 구독/해제와 동일하게 처리됩니다.
+
+현재가 구독:
 
 ```json
 {"action":"SUBSCRIBE","stockCodes":["005930","000660"]}
 ```
 
-구독 해제 요청:
+또는:
+
+```json
+{"action":"SUBSCRIBE_PRICE","stockCodes":["005930","000660"]}
+```
+
+현재가 구독 해제:
 
 ```json
 {"action":"UNSUBSCRIBE","stockCodes":["005930"]}
 ```
 
-서버 push 예시:
+호가 구독:
+
+```json
+{"action":"SUBSCRIBE_ORDERBOOK","stockCodes":["005930"]}
+```
+
+호가 구독 해제:
+
+```json
+{"action":"UNSUBSCRIBE_ORDERBOOK","stockCodes":["005930"]}
+```
+
+지수 구독:
+
+```json
+{"action":"SUBSCRIBE_INDEX","markets":["KOSPI","KOSDAQ"]}
+```
+
+지수 구독 해제:
+
+```json
+{"action":"UNSUBSCRIBE_INDEX","markets":["KOSPI"]}
+```
+
+현재가 push 예시:
 
 ```json
 {"type":"PRICE_UPDATE","data":{"stockCode":"005930","stockName":"삼성전자","currentPrice":74500}}
+```
+
+호가 push 예시:
+
+```json
+{"type":"ORDERBOOK_UPDATE","data":{"stockCode":"005930","stockName":"삼성전자","asks":[{"price":74600,"quantity":1200}],"bids":[{"price":74500,"quantity":900}],"timestamp":"2026-06-09T10:30:00"}}
+```
+
+지수 push 예시:
+
+```json
+{"type":"INDEX_UPDATE","data":{"market":"KOSPI","value":2847.00,"change":15.42,"changeRate":0.54,"volume":123456789,"timestamp":"2026-06-09T10:30:00"}}
 ```
 
 Swagger에서는 WebSocket을 직접 테스트할 수 없습니다. Postman WebSocket, 브라우저 콘솔, `wscat` 같은 WebSocket 클라이언트로 테스트합니다.
@@ -136,6 +184,7 @@ Swagger에서는 WebSocket을 직접 테스트할 수 없습니다. Postman WebS
 
 - 현재가: `stock:{stockCode}:price`
 - 호가: `stock:{stockCode}:orderbook`
+- 지수: `market:index:{market}`
 - 시장 상태: `market:status`
 
 종목 마스터 데이터는 TTL 없이 유지합니다.
@@ -169,6 +218,7 @@ KIS_APPROVAL_URL=https://openapivts.koreainvestment.com:29443/oauth2/Approval
 KIS_WEBSOCKET_URL=ws://ops.koreainvestment.com:31000
 KIS_PRICE_TR_ID=H0STCNT0
 KIS_ORDERBOOK_TR_ID=H0STASP0
+KIS_INDEX_TR_ID=H0UPCNT0
 KIS_CUSTOMER_TYPE=P
 KIS_EXCHANGE_ID=KRX
 
@@ -231,10 +281,18 @@ KIS_APPROVAL_URL=https://openapivts.koreainvestment.com:29443/oauth2/Approval
 KIS_WEBSOCKET_URL=ws://ops.koreainvestment.com:31000
 KIS_PRICE_TR_ID=H0STCNT0
 KIS_ORDERBOOK_TR_ID=H0STASP0
+KIS_INDEX_TR_ID=H0UPCNT0
 KIS_CUSTOMER_TYPE=P
 ```
 
-서비스는 기동 시 approval key를 발급받고 KIS WebSocket 연결을 유지합니다. `/ws/market`에서 종목을 구독하면 KIS 현재가/호가도 함께 구독하고, 수신한 시세를 Redis 저장과 WebSocket push 흐름으로 전달합니다.
+서비스는 기동 시 approval key를 발급받고 KIS WebSocket 연결을 유지합니다. `/ws/market`에서 종목 현재가나 호가를 구독하면 KIS 현재가/호가 TR을 구독하고, 지수를 구독하면 KIS 지수 TR을 구독합니다. 수신한 데이터는 Redis 저장과 WebSocket push 흐름으로 전달합니다.
+
+지수 구독 코드는 다음 값으로 매핑합니다.
+
+- `KOSPI`: `0001`
+- `KOSDAQ`: `1001`
+
+다른 업종/지수 구독이 필요하면 `markets`에 KIS 업종 구분 코드를 그대로 넣을 수 있습니다.
 
 ## 로컬 실행
 

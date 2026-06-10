@@ -6,6 +6,7 @@ import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceM
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookLevel;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.stock.StockNameResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -58,6 +59,22 @@ class RedisQuoteCacheWriterTest {
     @Test
     void createsStableRedisKeys() {
         assertEquals("stock:005930:orderbook", RedisQuoteCacheWriter.orderbookKey("005930"));
+        assertEquals("market:index:KOSPI", RedisQuoteCacheWriter.indexKey("KOSPI"));
+    }
+
+    @Test
+    void savesIndexQuoteWithLatestIndexKey() {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> valueOperations = mockValueOperations(redisTemplate);
+        RedisQuoteCacheWriter cacheWriter = new RedisQuoteCacheWriter(redisTemplate, objectMapper(), marketPriceMapper(), 30);
+
+        cacheWriter.saveIndex(indexEvent());
+
+        verify(valueOperations).set(
+                eq("market:index:KOSPI"),
+                startsWith("{\"market\":\"KOSPI\""),
+                eq(Duration.ofSeconds(30))
+        );
     }
 
     @SuppressWarnings("unchecked")
@@ -104,6 +121,22 @@ class RedisQuoteCacheWriterTest {
                 now,
                 now.plusNanos(100_000_000),
                 2
+        );
+    }
+
+    private static IndexQuoteEvent indexEvent() {
+        LocalDateTime now = LocalDateTime.of(2026, 5, 26, 10, 0);
+
+        return IndexQuoteEvent.of(
+                "0001",
+                "KOSPI",
+                new BigDecimal("2847.15"),
+                new BigDecimal("15.42"),
+                new BigDecimal("0.54"),
+                123456L,
+                now,
+                now.plusNanos(100_000_000),
+                3
         );
     }
 }

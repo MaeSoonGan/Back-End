@@ -3,15 +3,27 @@ kind: Deployment
 metadata:
   name: market-service
   namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: market-service-secret
   labels:
     app: market-service
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: market-service
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8085"
       labels:
         app: market-service
     spec:
@@ -19,7 +31,7 @@ spec:
         role: service
       containers:
         - name: market-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-service:bbb762665860a290058e1795d78aebebbb74b4e0
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-service:225079df4d26fead8677bfd069e148c60bc3f9e6
           imagePullPolicy: Always
           ports:
             - containerPort: 8085
@@ -30,7 +42,7 @@ spec:
             - configMapRef:
                 name: maesoongan-api-config
             - secretRef:
-                name: maesoongan-api-secret
+                name: market-service-secret
           readinessProbe:
             httpGet:
               path: /api/health

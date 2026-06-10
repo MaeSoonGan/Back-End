@@ -8,6 +8,7 @@ on:
     paths:
       - "apps/api/**"
       - "apps/realtime/**"
+      - "apps/worker/**"
       - "gradle/**"
       - "build.gradle"
       - "settings.gradle"
@@ -29,6 +30,7 @@ on:
           - order-service
           - market-realtime-service
           - user-realtime-service
+          - trade-sync-worker
 
 concurrency:
   group: build-and-push-ecr-${{ github.ref }}
@@ -57,6 +59,7 @@ jobs:
           - order-service
           - market-realtime-service
           - user-realtime-service
+          - trade-sync-worker
 
     steps:
       - name: Skip unselected service
@@ -81,7 +84,9 @@ jobs:
       - name: Build Docker image
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.service == 'all' || inputs.service == matrix.service }}
         run: |
-          if [[ "${{ matrix.service }}" == *"realtime-service" ]]; then
+          if [[ "${{ matrix.service }}" == "trade-sync-worker" ]]; then
+            SERVICE_PATH="apps/worker/${{ matrix.service }}"
+          elif [[ "${{ matrix.service }}" == *"realtime-service" ]]; then
             SERVICE_PATH="apps/realtime/${{ matrix.service }}"
           else
             SERVICE_PATH="apps/api/${{ matrix.service }}"
@@ -123,6 +128,7 @@ jobs:
             order-service
             market-realtime-service
             user-realtime-service
+            trade-sync-worker
           )
 
           if [[ "$SELECTED_SERVICE" == "all" ]]; then
@@ -132,7 +138,9 @@ jobs:
           fi
 
           for service in "${services[@]}"; do
-            if [[ "$service" == *"realtime-service" ]]; then
+            if [[ "$service" == "trade-sync-worker" ]]; then
+              manifest="infra/k8s/worker/${service}.yaml"
+            elif [[ "$service" == *"realtime-service" ]]; then
               manifest="infra/k8s/realtime/${service}.yaml"
             else
               manifest="infra/k8s/api/${service}.yaml"
@@ -147,7 +155,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- infra/k8s/api infra/k8s/realtime; then
+          if git diff --quiet -- infra/k8s/api infra/k8s/realtime infra/k8s/worker; then
             echo "No Kubernetes image tag changes to commit."
             exit 0
           fi
@@ -155,6 +163,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add infra/k8s/api infra/k8s/realtime
+          git add infra/k8s/api infra/k8s/realtime infra/k8s/worker
           git commit -m "CHORE: update Kubernetes image tags to ${GITHUB_SHA}"
           git push origin HEAD:${GITHUB_REF_NAME}

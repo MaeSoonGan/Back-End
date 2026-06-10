@@ -2,6 +2,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter;
 
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.PriceQuoteEvent;
+import com.mock.maesoongan.realtimequoteingestor.quote.domain.IndexQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteCacheWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,11 @@ public class LoggingQuoteCacheWriter implements QuoteCacheWriter {
     @Override
     public void saveOrderbook(OrderbookQuoteEvent event) {
         log.debug("Skip saving orderbook quote to cache. code={}, sequence={}", event.code(), event.sequence());
+    }
+
+    @Override
+    public void saveIndex(IndexQuoteEvent event) {
+        log.debug("Skip saving index quote to cache. market={}, sequence={}", event.name(), event.sequence());
     }
 
     @Override
