@@ -9,6 +9,8 @@ import com.mock.maesoongan.realtimequoteingestor.market.event.MarketPriceUpdated
 import com.mock.maesoongan.realtimequoteingestor.quote.application.QuoteIngestionService;
 import com.mock.maesoongan.realtimequoteingestor.websocket.dto.MarketWebSocketMessage;
 import com.mock.maesoongan.realtimequoteingestor.websocket.dto.MarketWebSocketRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -18,8 +20,10 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -27,6 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class MarketWebSocketHandler extends TextWebSocketHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(MarketWebSocketHandler.class);
 
     private final ObjectMapper objectMapper;
     private final QuoteIngestionService quoteIngestionService;
@@ -57,19 +63,45 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        MarketWebSocketRequest request = objectMapper.readValue(message.getPayload(), MarketWebSocketRequest.class);
-        if (request.action() == null) {
+        MarketWebSocketRequest request;
+        try {
+            request = objectMapper.readValue(message.getPayload(), MarketWebSocketRequest.class);
+        } catch (IOException exception) {
+            log.warn("Invalid market websocket request. sessionId={}, payload={}", session.getId(), message.getPayload());
+            send(session, MarketWebSocketMessage.error(Map.of(
+                    "message", "Invalid websocket request",
+                    "reason", "JSON 형식 또는 action 값이 올바르지 않습니다."
+            )));
             return;
         }
 
-        switch (request.action()) {
-            case SUBSCRIBE, SUBSCRIBE_PRICE -> subscribePrice(session, normalizeStockCodes(request.stockCodes()));
-            case UNSUBSCRIBE, UNSUBSCRIBE_PRICE -> unsubscribePrice(session, normalizeStockCodes(request.stockCodes()));
-            case SUBSCRIBE_ORDERBOOK -> subscribeOrderbook(session, normalizeStockCodes(request.stockCodes()));
-            case UNSUBSCRIBE_ORDERBOOK -> unsubscribeOrderbook(session, normalizeStockCodes(request.stockCodes()));
-            case SUBSCRIBE_INDEX -> subscribeIndex(session, normalizeMarkets(request.markets()));
-            case UNSUBSCRIBE_INDEX -> unsubscribeIndex(session, normalizeMarkets(request.markets()));
+        if (request.action() == null) {
+            send(session, MarketWebSocketMessage.error(Map.of(
+                    "message", "Missing action",
+                    "reason", "action 필드는 필수입니다."
+            )));
+            return;
         }
+
+        List<String> stockCodes = normalizeStockCodes(request.stockCodes());
+        List<String> markets = normalizeMarkets(request.markets());
+        log.info(
+                "Market websocket request. sessionId={}, action={}, stockCodes={}, markets={}",
+                session.getId(),
+                request.action(),
+                stockCodes,
+                markets
+        );
+
+        switch (request.action()) {
+            case SUBSCRIBE, SUBSCRIBE_PRICE -> subscribePrice(session, stockCodes);
+            case UNSUBSCRIBE, UNSUBSCRIBE_PRICE -> unsubscribePrice(session, stockCodes);
+            case SUBSCRIBE_ORDERBOOK -> subscribeOrderbook(session, stockCodes);
+            case UNSUBSCRIBE_ORDERBOOK -> unsubscribeOrderbook(session, stockCodes);
+            case SUBSCRIBE_INDEX -> subscribeIndex(session, markets);
+            case UNSUBSCRIBE_INDEX -> unsubscribeIndex(session, markets);
+        }
+        send(session, MarketWebSocketMessage.subscriptionAck(subscriptionAck(request, stockCodes, markets)));
     }
 
     @Override
@@ -296,5 +328,17 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
                 session.sendMessage(message);
             }
         }
+    }
+
+    private Map<String, Object> subscriptionAck(
+            MarketWebSocketRequest request,
+            List<String> stockCodes,
+            List<String> markets
+    ) {
+        Map<String, Object> ack = new LinkedHashMap<>();
+        ack.put("action", request.action());
+        ack.put("stockCodes", stockCodes);
+        ack.put("markets", markets);
+        return ack;
     }
 }

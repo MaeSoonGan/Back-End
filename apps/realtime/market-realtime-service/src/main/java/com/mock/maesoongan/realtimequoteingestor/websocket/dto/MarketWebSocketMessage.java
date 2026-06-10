@@ -20,4 +20,12 @@ public record MarketWebSocketMessage<T>(
     public static <T> MarketWebSocketMessage<T> marketStatus(T data) {
         return new MarketWebSocketMessage<>("MARKET_STATUS", data);
     }
+
+    public static <T> MarketWebSocketMessage<T> subscriptionAck(T data) {
+        return new MarketWebSocketMessage<>("SUBSCRIPTION_ACK", data);
+    }
+
+    public static <T> MarketWebSocketMessage<T> error(T data) {
+        return new MarketWebSocketMessage<>("ERROR", data);
+    }
 }
