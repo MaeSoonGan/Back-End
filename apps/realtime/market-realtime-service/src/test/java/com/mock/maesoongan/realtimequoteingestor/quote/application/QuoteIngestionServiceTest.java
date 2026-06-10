@@ -38,7 +38,8 @@ class QuoteIngestionServiceTest {
         QuoteIngestionStatus status = service.status();
         assertEquals(IngestionStatus.RUNNING, status.ingestionStatus());
         assertTrue(status.quoteSourceConnected());
-        assertEquals(List.of("005930", "000660"), source.subscribedCodes);
+        assertEquals(List.of("005930", "000660"), source.subscribedPriceCodes);
+        assertTrue(source.subscribedOrderbookCodes.isEmpty());
         assertNotNull(source.handler);
         assertFalse(status.redisEnabled());
         assertFalse(status.kafkaEnabled());
@@ -180,7 +181,8 @@ class QuoteIngestionServiceTest {
 
         private boolean connected;
         private QuoteEventHandler handler;
-        private List<String> subscribedCodes = List.of();
+        private List<String> subscribedPriceCodes = List.of();
+        private List<String> subscribedOrderbookCodes = List.of();
 
         @Override
         public void start(QuoteEventHandler handler) {
@@ -194,13 +196,25 @@ class QuoteIngestionServiceTest {
         }
 
         @Override
-        public void subscribe(List<String> stockCodes) {
-            this.subscribedCodes = List.copyOf(stockCodes);
+        public void subscribePrices(List<String> stockCodes) {
+            this.subscribedPriceCodes = List.copyOf(stockCodes);
         }
 
         @Override
-        public void unsubscribe(List<String> stockCodes) {
-            this.subscribedCodes = this.subscribedCodes.stream()
+        public void unsubscribePrices(List<String> stockCodes) {
+            this.subscribedPriceCodes = this.subscribedPriceCodes.stream()
+                    .filter(code -> !stockCodes.contains(code))
+                    .toList();
+        }
+
+        @Override
+        public void subscribeOrderbooks(List<String> stockCodes) {
+            this.subscribedOrderbookCodes = List.copyOf(stockCodes);
+        }
+
+        @Override
+        public void unsubscribeOrderbooks(List<String> stockCodes) {
+            this.subscribedOrderbookCodes = this.subscribedOrderbookCodes.stream()
                     .filter(code -> !stockCodes.contains(code))
                     .toList();
         }

@@ -58,7 +58,7 @@ public class QuoteIngestionService implements QuoteEventHandler {
     public void start(List<String> stockCodes) {
         try {
             quoteSource.start(this);
-            quoteSource.subscribe(stockCodes);
+            quoteSource.subscribePrices(stockCodes);
             ingestionStatus.set(IngestionStatus.RUNNING);
             lastError.set(null);
         } catch (RuntimeException exception) {
@@ -73,12 +73,20 @@ public class QuoteIngestionService implements QuoteEventHandler {
         ingestionStatus.set(IngestionStatus.STOPPED);
     }
 
-    public void subscribe(List<String> stockCodes) {
-        quoteSource.subscribe(stockCodes);
+    public void subscribePrices(List<String> stockCodes) {
+        quoteSource.subscribePrices(stockCodes);
     }
 
-    public void unsubscribe(List<String> stockCodes) {
-        quoteSource.unsubscribe(stockCodes);
+    public void unsubscribePrices(List<String> stockCodes) {
+        quoteSource.unsubscribePrices(stockCodes);
+    }
+
+    public void subscribeOrderbooks(List<String> stockCodes) {
+        quoteSource.subscribeOrderbooks(stockCodes);
+    }
+
+    public void unsubscribeOrderbooks(List<String> stockCodes) {
+        quoteSource.unsubscribeOrderbooks(stockCodes);
     }
 
     public void subscribeIndexes(List<String> markets) {

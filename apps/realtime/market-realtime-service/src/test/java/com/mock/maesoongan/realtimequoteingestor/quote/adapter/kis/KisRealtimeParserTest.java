@@ -137,11 +137,16 @@ class KisRealtimeParserTest {
         return new KisProperties(
                 "app-key",
                 "app-secret",
+                "https://example.com",
+                "https://example.com/oauth2/tokenP",
                 "https://example.com/oauth2/Approval",
                 "ws://example.com",
                 "H0STCNT0",
                 "H0STASP0",
                 "H0UPCNT0",
+                "HHMCM000100C0",
+                "/uapi/domestic-stock/v1/ranking/hts-top-view",
+                "FID_COND_MRKT_DIV_CODE=J",
                 "P"
         );
     }

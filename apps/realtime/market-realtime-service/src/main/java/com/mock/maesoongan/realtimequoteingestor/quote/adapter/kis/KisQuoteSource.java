@@ -22,6 +22,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,8 +39,12 @@ public class KisQuoteSource implements QuoteSource {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final ScheduledExecutorService reconnectExecutor;
-    private final Set<String> subscribedCodes = ConcurrentHashMap.newKeySet();
+    private final Set<String> subscribedPriceCodes = ConcurrentHashMap.newKeySet();
+    private final Set<String> subscribedOrderbookCodes = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedIndexes = ConcurrentHashMap.newKeySet();
+    // 해제 디바운스: 즉시 KIS 해제하지 않고 잠시 예약해, 새로고침 등으로 곧 재구독되면 취소(churn/MAX OVER 방지)
+    private static final long UNSUBSCRIBE_DELAY_SECONDS = 5;
+    private final Map<String, ScheduledFuture<?>> pendingUnsubscribe = new ConcurrentHashMap<>();
     private final Map<String, KisRealtimeParser.EncryptionContext> encryptionContexts = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -89,55 +94,114 @@ public class KisQuoteSource implements QuoteSource {
     }
 
     @Override
-    public void subscribe(List<String> stockCodes) {
-        List<String> newCodes = stockCodes.stream()
+    public void subscribePrices(List<String> stockCodes) {
+        stockCodes.stream()
                 .map(String::trim)
                 .filter(code -> !code.isBlank())
                 .distinct()
-                .filter(subscribedCodes::add)
-                .toList();
-        if (connected.get()) {
-            newCodes.forEach(code -> sendSubscriptions(code, "1"));
-        }
+                .forEach(code -> {
+                    boolean hadPending = cancelPendingUnsubscribe("P:" + code);
+                    boolean isNew = subscribedPriceCodes.add(code);
+                    // 예약 해제를 취소한 경우 이미 KIS에 등록돼 있으므로 재전송 불필요
+                    if (isNew && !hadPending && connected.get()) {
+                        sendSubscription(properties.priceTrId(), code, "1");
+                    }
+                });
     }
 
     @Override
-    public void unsubscribe(List<String> stockCodes) {
-        List<String> removedCodes = stockCodes.stream()
+    public void unsubscribePrices(List<String> stockCodes) {
+        stockCodes.stream()
                 .map(String::trim)
                 .filter(code -> !code.isBlank())
                 .distinct()
-                .filter(subscribedCodes::remove)
-                .toList();
-        if (connected.get()) {
-            removedCodes.forEach(code -> sendSubscriptions(code, "2"));
-        }
+                .filter(subscribedPriceCodes::contains)
+                .forEach(code -> scheduleUnsubscribe("P:" + code, () -> {
+                    if (subscribedPriceCodes.remove(code) && connected.get()) {
+                        sendSubscription(properties.priceTrId(), code, "2");
+                    }
+                }));
+    }
+
+    @Override
+    public void subscribeOrderbooks(List<String> stockCodes) {
+        stockCodes.stream()
+                .map(String::trim)
+                .filter(code -> !code.isBlank())
+                .distinct()
+                .forEach(code -> {
+                    boolean hadPending = cancelPendingUnsubscribe("O:" + code);
+                    boolean isNew = subscribedOrderbookCodes.add(code);
+                    if (isNew && !hadPending && connected.get()) {
+                        sendSubscription(properties.orderbookTrId(), code, "1");
+                    }
+                });
+    }
+
+    @Override
+    public void unsubscribeOrderbooks(List<String> stockCodes) {
+        stockCodes.stream()
+                .map(String::trim)
+                .filter(code -> !code.isBlank())
+                .distinct()
+                .filter(subscribedOrderbookCodes::contains)
+                .forEach(code -> scheduleUnsubscribe("O:" + code, () -> {
+                    if (subscribedOrderbookCodes.remove(code) && connected.get()) {
+                        sendSubscription(properties.orderbookTrId(), code, "2");
+                    }
+                }));
     }
 
     @Override
     public void subscribeIndexes(List<String> markets) {
-        List<String> newIndexes = markets.stream()
+        markets.stream()
                 .map(this::normalizeMarket)
                 .filter(market -> !market.isBlank())
                 .distinct()
-                .filter(subscribedIndexes::add)
-                .toList();
-        if (connected.get()) {
-            newIndexes.forEach(market -> sendIndexSubscription(market, "1"));
-        }
+                .forEach(market -> {
+                    boolean hadPending = cancelPendingUnsubscribe("I:" + market);
+                    boolean isNew = subscribedIndexes.add(market);
+                    if (isNew && !hadPending && connected.get()) {
+                        sendIndexSubscription(market, "1");
+                    }
+                });
     }
 
     @Override
     public void unsubscribeIndexes(List<String> markets) {
-        List<String> removedIndexes = markets.stream()
+        markets.stream()
                 .map(this::normalizeMarket)
                 .filter(market -> !market.isBlank())
                 .distinct()
-                .filter(subscribedIndexes::remove)
-                .toList();
-        if (connected.get()) {
-            removedIndexes.forEach(market -> sendIndexSubscription(market, "2"));
+                .filter(subscribedIndexes::contains)
+                .forEach(market -> scheduleUnsubscribe("I:" + market, () -> {
+                    if (subscribedIndexes.remove(market) && connected.get()) {
+                        sendIndexSubscription(market, "2");
+                    }
+                }));
+    }
+
+    // 해제를 UNSUBSCRIBE_DELAY_SECONDS 만큼 지연 예약. 같은 키가 그 사이 재구독되면 cancelPendingUnsubscribe로 취소됨.
+    private void scheduleUnsubscribe(String key, Runnable unsubscribeAction) {
+        pendingUnsubscribe.compute(key, (ignored, existing) -> {
+            if (existing != null) {
+                return existing; // 이미 예약돼 있으면 유지
+            }
+            return reconnectExecutor.schedule(() -> {
+                pendingUnsubscribe.remove(key);
+                unsubscribeAction.run();
+            }, UNSUBSCRIBE_DELAY_SECONDS, TimeUnit.SECONDS);
+        });
+    }
+
+    // 예약된 해제가 있으면 취소(= 계속 구독 유지). 취소했으면 true.
+    private boolean cancelPendingUnsubscribe(String key) {
+        ScheduledFuture<?> pending = pendingUnsubscribe.remove(key);
+        if (pending != null) {
+            pending.cancel(false);
+            return true;
         }
+        return false;
     }
 
     @Override
@@ -166,13 +230,9 @@ public class KisQuoteSource implements QuoteSource {
     private void onConnected() {
         connected.set(true);
         reconnectAttempt.set(0);
-        subscribedCodes.forEach(code -> sendSubscriptions(code, "1"));
+        subscribedPriceCodes.forEach(code -> sendSubscription(properties.priceTrId(), code, "1"));
+        subscribedOrderbookCodes.forEach(code -> sendSubscription(properties.orderbookTrId(), code, "1"));
         subscribedIndexes.forEach(market -> sendIndexSubscription(market, "1"));
-    }
-
-    private void sendSubscriptions(String stockCode, String trType) {
-        sendSubscription(properties.priceTrId(), stockCode, trType);
-        sendSubscription(properties.orderbookTrId(), stockCode, trType);
     }
 
     private void sendSubscription(String trId, String stockCode, String trType) {

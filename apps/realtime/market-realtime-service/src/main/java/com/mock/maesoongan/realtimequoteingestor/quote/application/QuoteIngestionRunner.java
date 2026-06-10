@@ -17,7 +17,7 @@ public class QuoteIngestionRunner implements ApplicationRunner {
     public QuoteIngestionRunner(
             QuoteIngestionService quoteIngestionService,
             @Value("${quote.ingestion.auto-start:true}") boolean autoStart,
-            @Value("${quote.ingestion.stock-codes:005930,000660}") List<String> stockCodes
+            @Value("${quote.ingestion.stock-codes:}") List<String> stockCodes
     ) {
         this.quoteIngestionService = quoteIngestionService;
         this.autoStart = autoStart;

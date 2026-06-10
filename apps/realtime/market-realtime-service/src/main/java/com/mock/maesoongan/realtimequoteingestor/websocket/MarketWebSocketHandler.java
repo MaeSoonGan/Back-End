@@ -40,7 +40,8 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
     private final ConcurrentMap<WebSocketSession, Set<String>> priceSessionSubscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<WebSocketSession, Set<String>> orderbookSessionSubscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<WebSocketSession, Set<String>> indexSessionSubscriptions = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, AtomicInteger> stockSubscriberCounts = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, AtomicInteger> priceSubscriberCounts = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, AtomicInteger> orderbookSubscriberCounts = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, AtomicInteger> indexSubscriberCounts = new ConcurrentHashMap<>();
 
     public MarketWebSocketHandler(
@@ -70,7 +71,7 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
             log.warn("Invalid market websocket request. sessionId={}, payload={}", session.getId(), message.getPayload());
             send(session, MarketWebSocketMessage.error(Map.of(
                     "message", "Invalid websocket request",
-                    "reason", "JSON 형식 또는 action 값이 올바르지 않습니다."
+                    "reason", "Invalid JSON request or unsupported action."
             )));
             return;
         }
@@ -78,7 +79,7 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         if (request.action() == null) {
             send(session, MarketWebSocketMessage.error(Map.of(
                     "message", "Missing action",
-                    "reason", "action 필드는 필수입니다."
+                    "reason", "action is required."
             )));
             return;
         }
@@ -109,8 +110,8 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         Set<String> priceCodes = priceSessionSubscriptions.remove(session);
         Set<String> orderbookCodes = orderbookSessionSubscriptions.remove(session);
         Set<String> indexes = indexSessionSubscriptions.remove(session);
-        decrementGlobalStockSubscriptions(toList(priceCodes));
-        decrementGlobalStockSubscriptions(toList(orderbookCodes));
+        decrementGlobalPriceSubscriptions(toList(priceCodes));
+        decrementGlobalOrderbookSubscriptions(toList(orderbookCodes));
         decrementGlobalIndexSubscriptions(toList(indexes));
     }
 
@@ -160,54 +161,58 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void subscribePrice(WebSocketSession session, List<String> stockCodes) {
-        subscribeStockChannel(session, stockCodes, priceSessionSubscriptions);
+        List<String> newlySubscribedCodes = subscribeStockChannel(session, stockCodes, priceSessionSubscriptions, priceSubscriberCounts);
+        if (!newlySubscribedCodes.isEmpty()) {
+            quoteIngestionService.subscribePrices(newlySubscribedCodes);
+        }
     }
 
     private void unsubscribePrice(WebSocketSession session, List<String> stockCodes) {
-        unsubscribeStockChannel(session, stockCodes, priceSessionSubscriptions);
+        List<String> removedCodes = unsubscribeStockChannel(session, stockCodes, priceSessionSubscriptions);
+        decrementGlobalPriceSubscriptions(removedCodes);
     }
 
     private void subscribeOrderbook(WebSocketSession session, List<String> stockCodes) {
-        subscribeStockChannel(session, stockCodes, orderbookSessionSubscriptions);
+        List<String> newlySubscribedCodes = subscribeStockChannel(session, stockCodes, orderbookSessionSubscriptions, orderbookSubscriberCounts);
+        if (!newlySubscribedCodes.isEmpty()) {
+            quoteIngestionService.subscribeOrderbooks(newlySubscribedCodes);
+        }
     }
 
     private void unsubscribeOrderbook(WebSocketSession session, List<String> stockCodes) {
-        unsubscribeStockChannel(session, stockCodes, orderbookSessionSubscriptions);
+        List<String> removedCodes = unsubscribeStockChannel(session, stockCodes, orderbookSessionSubscriptions);
+        decrementGlobalOrderbookSubscriptions(removedCodes);
     }
 
-    private void subscribeStockChannel(
+    private List<String> subscribeStockChannel(
             WebSocketSession session,
             List<String> stockCodes,
-            ConcurrentMap<WebSocketSession, Set<String>> sessionSubscriptions
+            ConcurrentMap<WebSocketSession, Set<String>> sessionSubscriptions,
+            ConcurrentMap<String, AtomicInteger> subscriberCounts
     ) {
         if (stockCodes.isEmpty()) {
-            return;
+            return List.of();
         }
         Set<String> subscriptions = sessionSubscriptions.computeIfAbsent(session, key -> ConcurrentHashMap.newKeySet());
-        List<String> newlySubscribedCodes = stockCodes.stream()
+        return stockCodes.stream()
                 .filter(subscriptions::add)
-                .filter(this::incrementGlobalStockSubscription)
+                .filter(stockCode -> incrementGlobalSubscription(stockCode, subscriberCounts))
                 .toList();
-
-        if (!newlySubscribedCodes.isEmpty()) {
-            quoteIngestionService.subscribe(newlySubscribedCodes);
-        }
     }
 
-    private void unsubscribeStockChannel(
+    private List<String> unsubscribeStockChannel(
             WebSocketSession session,
             List<String> stockCodes,
             ConcurrentMap<WebSocketSession, Set<String>> sessionSubscriptions
     ) {
         Set<String> subscriptions = sessionSubscriptions.get(session);
         if (subscriptions == null) {
-            return;
+            return List.of();
         }
 
-        List<String> removedCodes = stockCodes.stream()
+        return stockCodes.stream()
                 .filter(subscriptions::remove)
                 .toList();
-        decrementGlobalStockSubscriptions(removedCodes);
     }
 
     private void subscribeIndex(WebSocketSession session, List<String> markets) {
@@ -237,58 +242,53 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         decrementGlobalIndexSubscriptions(removedMarkets);
     }
 
-    private boolean incrementGlobalStockSubscription(String stockCode) {
-        AtomicInteger count = stockSubscriberCounts.computeIfAbsent(stockCode, key -> new AtomicInteger());
-        return count.incrementAndGet() == 1;
-    }
-
-    private void decrementGlobalStockSubscriptions(List<String> stockCodes) {
+    private void decrementGlobalPriceSubscriptions(List<String> stockCodes) {
         List<String> globallyUnsubscribedCodes = stockCodes.stream()
-                .filter(this::decrementGlobalStockSubscription)
+                .filter(stockCode -> decrementGlobalSubscription(stockCode, priceSubscriberCounts))
                 .toList();
         if (!globallyUnsubscribedCodes.isEmpty()) {
-            quoteIngestionService.unsubscribe(globallyUnsubscribedCodes);
+            quoteIngestionService.unsubscribePrices(globallyUnsubscribedCodes);
         }
     }
 
-    private boolean decrementGlobalStockSubscription(String stockCode) {
-        AtomicInteger count = stockSubscriberCounts.get(stockCode);
+    private void decrementGlobalOrderbookSubscriptions(List<String> stockCodes) {
+        List<String> globallyUnsubscribedCodes = stockCodes.stream()
+                .filter(stockCode -> decrementGlobalSubscription(stockCode, orderbookSubscriberCounts))
+                .toList();
+        if (!globallyUnsubscribedCodes.isEmpty()) {
+            quoteIngestionService.unsubscribeOrderbooks(globallyUnsubscribedCodes);
+        }
+    }
+
+    private boolean incrementGlobalSubscription(String key, ConcurrentMap<String, AtomicInteger> subscriberCounts) {
+        AtomicInteger count = subscriberCounts.computeIfAbsent(key, ignored -> new AtomicInteger());
+        return count.incrementAndGet() == 1;
+    }
+
+    private boolean decrementGlobalSubscription(String key, ConcurrentMap<String, AtomicInteger> subscriberCounts) {
+        AtomicInteger count = subscriberCounts.get(key);
         if (count == null) {
             return false;
         }
         int remaining = count.decrementAndGet();
         if (remaining <= 0) {
-            stockSubscriberCounts.remove(stockCode);
+            subscriberCounts.remove(key);
             return true;
         }
         return false;
     }
 
     private boolean incrementGlobalIndexSubscription(String market) {
-        AtomicInteger count = indexSubscriberCounts.computeIfAbsent(market, key -> new AtomicInteger());
-        return count.incrementAndGet() == 1;
+        return incrementGlobalSubscription(market, indexSubscriberCounts);
     }
 
     private void decrementGlobalIndexSubscriptions(List<String> markets) {
         List<String> globallyUnsubscribedMarkets = markets.stream()
-                .filter(this::decrementGlobalIndexSubscription)
+                .filter(market -> decrementGlobalSubscription(market, indexSubscriberCounts))
                 .toList();
         if (!globallyUnsubscribedMarkets.isEmpty()) {
             quoteIngestionService.unsubscribeIndexes(globallyUnsubscribedMarkets);
         }
-    }
-
-    private boolean decrementGlobalIndexSubscription(String market) {
-        AtomicInteger count = indexSubscriberCounts.get(market);
-        if (count == null) {
-            return false;
-        }
-        int remaining = count.decrementAndGet();
-        if (remaining <= 0) {
-            indexSubscriberCounts.remove(market);
-            return true;
-        }
-        return false;
     }
 
     private List<String> normalizeStockCodes(List<String> stockCodes) {
