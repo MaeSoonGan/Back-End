@@ -290,8 +290,13 @@ public class AdminMemberService {
                     values (?, ?, ?, 'SUSPENDED', ?)
                     """, memberId, adminId, request.reason(), LocalDateTime.now());
 
-            insertAudit(adminId, "SUSPEND_MEMBER", "MEMBER", memberId, request.reason());
             suspendedIds.add(memberId);
+        }
+
+        // 정지 작업 1회당 감사로그 1건만 기록 (상세 = 정지 대상 닉네임들). 회원별 개별 로그 X
+        if (!suspendedIds.isEmpty()) {
+            long auditTargetId = suspendedIds.size() == 1 ? suspendedIds.get(0) : 0L;
+            insertAudit(adminId, "SUSPEND_MEMBER", "MEMBER", auditTargetId, request.reason());
         }
 
         return new SuspendMembersResponse(
