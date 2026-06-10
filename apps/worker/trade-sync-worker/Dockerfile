@@ -5,6 +5,7 @@ COPY gradlew gradlew.bat settings.gradle build.gradle ./
 COPY gradle ./gradle
 COPY apps/worker/trade-sync-worker ./apps/worker/trade-sync-worker
 
+RUN chmod +x gradlew
 RUN ./gradlew :apps:worker:trade-sync-worker:bootJar --no-daemon
 
 FROM eclipse-temurin:17-jre
