@@ -95,6 +95,44 @@ class KisRealtimeParserTest {
         assertEquals(new BigDecimal("962.15"), event.value());
     }
 
+    @Test
+    void parsesIndexPayloadByResponseRecordCount() {
+        KisRealtimeParser parser = new KisRealtimeParser(properties());
+        String payload = String.join("^", List.of(
+                "0001",
+                "101530",
+                "2847.15",
+                "2",
+                "15.42",
+                "123456",
+                "0",
+                "0",
+                "0",
+                "0.54",
+                "1001",
+                "101530",
+                "962.15",
+                "5",
+                "3.21",
+                "30828",
+                "0",
+                "0",
+                "0",
+                "0.33"
+        ));
+
+        KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(
+                "0|H0UPCNT0|002|" + payload,
+                null
+        );
+
+        assertEquals(2, parsed.indexEvents().size());
+        assertEquals("KOSPI", parsed.indexEvents().get(0).name());
+        assertEquals("KOSDAQ", parsed.indexEvents().get(1).name());
+        assertEquals(new BigDecimal("-3.21"), parsed.indexEvents().get(1).change());
+        assertEquals(new BigDecimal("-0.33"), parsed.indexEvents().get(1).changeRate());
+    }
+
     private static KisProperties properties() {
         return new KisProperties(
                 "app-key",

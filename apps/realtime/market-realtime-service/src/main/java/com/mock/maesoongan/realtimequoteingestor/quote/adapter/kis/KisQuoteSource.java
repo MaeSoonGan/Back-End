@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteEventHandler;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +30,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @ConditionalOnProperty(prefix = "quote.source", name = "mode", havingValue = "kis")
 public class KisQuoteSource implements QuoteSource {
 
+    private static final Logger log = LoggerFactory.getLogger(KisQuoteSource.class);
+
     private final KisProperties properties;
     private final KisApprovalKeyClient approvalKeyClient;
     private final KisRealtimeParser parser;
@@ -40,6 +44,7 @@ public class KisQuoteSource implements QuoteSource {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicInteger reconnectAttempt = new AtomicInteger();
+    private final AtomicInteger indexParseWarningCount = new AtomicInteger();
 
     private volatile WebSocket webSocket;
     private volatile QuoteEventHandler handler;
@@ -191,6 +196,7 @@ public class KisQuoteSource implements QuoteSource {
                     )
             ));
             socket.sendText(message, true);
+            log.info("Sent KIS realtime subscription. trId={}, trKey={}, trType={}", trId, stockCode, trType);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to build KIS subscription message", exception);
         }
@@ -219,6 +225,18 @@ public class KisQuoteSource implements QuoteSource {
         }
         KisRealtimeParser.EncryptionContext encryptionContext = encryptionContexts.get(parts[1]);
         KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(message, encryptionContext);
+        if (properties.indexTrId().equals(parts[1]) && parsed.indexEvents().isEmpty()) {
+            int warningCount = indexParseWarningCount.incrementAndGet();
+            if (warningCount <= 5) {
+                log.warn(
+                        "No KIS index events parsed. trId={}, dataCount={}, fieldCount={}, encryptionFlag={}",
+                        parts[1],
+                        parts[2],
+                        parser.fieldCount(parts[3]),
+                        parts[0]
+                );
+            }
+        }
         parsed.priceEvents().forEach(handler::handlePrice);
         parsed.orderbookEvents().forEach(handler::handleOrderbook);
         parsed.indexEvents().forEach(handler::handleIndex);
@@ -242,16 +260,40 @@ public class KisQuoteSource implements QuoteSource {
     private void handleJsonMessage(String message) {
         try {
             JsonNode root = objectMapper.readTree(message);
-            String trId = root.path("header").path("tr_id").asText();
+            String trId = firstNonBlank(
+                    root.path("header").path("tr_id").asText(),
+                    root.path("body").path("input").path("tr_id").asText(),
+                    root.path("body").path("output").path("tr_id").asText()
+            );
+            String trKey = firstNonBlank(
+                    root.path("body").path("input").path("tr_key").asText(),
+                    root.path("body").path("output").path("tr_key").asText()
+            );
+            String rtCd = firstNonBlank(root.path("body").path("rt_cd").asText(), root.path("header").path("rt_cd").asText());
+            String msg1 = firstNonBlank(root.path("body").path("msg1").asText(), root.path("header").path("msg1").asText());
             JsonNode output = root.path("body").path("output");
             String iv = output.path("iv").asText();
             String key = output.path("key").asText();
+            if (!rtCd.isBlank() || !msg1.isBlank()) {
+                log.info("KIS realtime control message. trId={}, trKey={}, rtCd={}, msg={}", trId, trKey, rtCd, msg1);
+            }
             if (!trId.isBlank() && !iv.isBlank() && !key.isBlank()) {
                 encryptionContexts.put(trId, new KisRealtimeParser.EncryptionContext(iv, key));
+            } else if (!iv.isBlank() || !key.isBlank()) {
+                log.warn("KIS realtime encryption context is incomplete. trId={}, hasIv={}, hasKey={}", trId, !iv.isBlank(), !key.isBlank());
             }
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to parse KIS JSON message", exception);
         }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private void scheduleReconnect() {
@@ -287,7 +329,11 @@ public class KisQuoteSource implements QuoteSource {
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             partialText.append(data);
             if (last) {
-                handleText(partialText.toString());
+                try {
+                    handleText(partialText.toString());
+                } catch (RuntimeException exception) {
+                    log.warn("Failed to handle KIS realtime message", exception);
+                }
                 partialText.setLength(0);
             }
             webSocket.request(1);
