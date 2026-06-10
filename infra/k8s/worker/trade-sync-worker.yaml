@@ -28,7 +28,7 @@ spec:
         app: trade-sync-worker
     spec:
       nodeSelector:
-        role: worker
+        role: async
       containers:
         - name: trade-sync-worker
           image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/trade-sync-worker:latest
