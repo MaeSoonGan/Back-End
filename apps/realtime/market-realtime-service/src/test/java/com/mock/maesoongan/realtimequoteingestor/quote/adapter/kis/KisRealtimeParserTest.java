@@ -76,6 +76,25 @@ class KisRealtimeParserTest {
         assertEquals(0, parsed.orderbookEvents().size());
     }
 
+    @Test
+    void parsesKosdaqIndexCode() {
+        KisRealtimeParser parser = new KisRealtimeParser(properties());
+        List<String> fields = indexFields();
+        fields.set(0, "1001");
+        fields.set(2, "962.15");
+        String payload = String.join("^", fields);
+
+        KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(
+                "0|H0UPCNT0|001|" + payload,
+                null
+        );
+
+        IndexQuoteEvent event = parsed.indexEvents().get(0);
+        assertEquals("1001", event.code());
+        assertEquals("KOSDAQ", event.name());
+        assertEquals(new BigDecimal("962.15"), event.value());
+    }
+
     private static KisProperties properties() {
         return new KisProperties(
                 "app-key",

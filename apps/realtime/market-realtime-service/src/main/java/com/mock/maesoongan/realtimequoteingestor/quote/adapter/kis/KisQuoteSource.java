@@ -234,7 +234,7 @@ public class KisQuoteSource implements QuoteSource {
     private String indexCode(String market) {
         return switch (market) {
             case "KOSPI" -> "0001";
-            case "KOSDAQ" -> "0002";
+            case "KOSDAQ" -> "1001";
             default -> market;
         };
     }

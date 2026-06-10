@@ -151,7 +151,7 @@ public class KisRealtimeParser {
     private String indexName(String code) {
         return switch (code) {
             case "0001" -> "KOSPI";
-            case "0002" -> "KOSDAQ";
+            case "1001" -> "KOSDAQ";
             default -> code;
         };
     }
