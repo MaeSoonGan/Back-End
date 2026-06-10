@@ -20,6 +20,11 @@ spec:
       app: auth-service
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8081"
+
       labels:
         app: auth-service
     spec:
