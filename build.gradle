@@ -44,10 +44,9 @@ tasks.named('test') {
 subprojects {
     plugins.withId('java') {
         dependencies {
-            add('implementation', 'io.micrometer:micrometer-tracing-bridge-otel')
+            add('implementation', 'org.springframework.boot:spring-boot-starter-opentelemetry')
             add('implementation', 'net.logstash.logback:logstash-logback-encoder:8.1')
             add('runtimeOnly', 'io.micrometer:micrometer-registry-prometheus')
-            add('runtimeOnly', 'io.opentelemetry:opentelemetry-exporter-otlp')
         }
     }
 
