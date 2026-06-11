@@ -272,8 +272,19 @@ public class KisQuoteSource implements QuoteSource {
             return;
         }
         lastResetAt = now;
-        log.info("KIS 연결 리셋 요청 → 재연결로 등록 초기화");
+        log.info("KIS 연결 리셋 요청 → 추적 목록 초기화 + 재연결");
+        // pod 메모리의 누적 추적 목록까지 비운다(= pod 재시작 효과). 재연결 후엔
+        // 핸들러가 현재 활성 구독만 다시 등록하므로 onConnected가 그 깨끗한 목록만 등록한다.
+        clearSubscriptions();
         triggerReconnect();
+    }
+
+    private void clearSubscriptions() {
+        pendingUnsubscribe.values().forEach(future -> future.cancel(false));
+        pendingUnsubscribe.clear();
+        subscribedPriceCodes.clear();
+        subscribedOrderbookCodes.clear();
+        subscribedIndexes.clear();
     }
 
     // KIS 연결을 끊고 재연결. connect()가 새 approval_key 발급(한도 초기화),
