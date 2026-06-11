@@ -28,4 +28,8 @@ public record MarketWebSocketMessage<T>(
     public static <T> MarketWebSocketMessage<T> error(T data) {
         return new MarketWebSocketMessage<>("ERROR", data);
     }
+
+    public static <T> MarketWebSocketMessage<T> realtimeStatus(T data) {
+        return new MarketWebSocketMessage<>("REALTIME_STATUS", data);
+    }
 }

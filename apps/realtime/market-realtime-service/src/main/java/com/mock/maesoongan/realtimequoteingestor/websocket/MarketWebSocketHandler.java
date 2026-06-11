@@ -6,6 +6,7 @@ import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusResponse
 import com.mock.maesoongan.realtimequoteingestor.market.event.MarketIndexUpdatedEvent;
 import com.mock.maesoongan.realtimequoteingestor.market.event.MarketOrderbookUpdatedEvent;
 import com.mock.maesoongan.realtimequoteingestor.market.event.MarketPriceUpdatedEvent;
+import com.mock.maesoongan.realtimequoteingestor.market.event.MarketRealtimeStatusEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.application.QuoteIngestionService;
 import com.mock.maesoongan.realtimequoteingestor.websocket.dto.MarketWebSocketMessage;
 import com.mock.maesoongan.realtimequoteingestor.websocket.dto.MarketWebSocketRequest;
@@ -156,6 +157,27 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
             WebSocketSession session = entry.getKey();
             if (session.isOpen() && entry.getValue().contains(market)) {
                 send(session, message);
+            }
+        }
+    }
+
+    // 실시간 수신 복구 시작/완료를 모든 세션에 알림 (FE 복구 모달용)
+    @EventListener
+    public void handleRealtimeStatus(MarketRealtimeStatusEvent event) {
+        TextMessage message;
+        try {
+            message = new TextMessage(objectMapper.writeValueAsString(
+                    MarketWebSocketMessage.realtimeStatus(Map.of("recovering", event.recovering()))
+            ));
+        } catch (IOException exception) {
+            log.warn("Failed to serialize realtime status message", exception);
+            return;
+        }
+        for (WebSocketSession session : priceSessionSubscriptions.keySet()) {
+            try {
+                send(session, message);
+            } catch (IOException exception) {
+                log.warn("Failed to send realtime status. sessionId={}", session.getId());
             }
         }
     }
