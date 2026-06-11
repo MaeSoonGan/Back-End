@@ -7,6 +7,7 @@ import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.Not
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.NotificationSettingsResponse;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.ReadAllNotificationsResponse;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.ReadNotificationResponse;
+import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.UnreadCountResponse;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.UpdateNotificationSettingsRequest;
 import com.mock.maesoongan.notificationapi.notification.repository.NotificationRepository;
 import com.mock.maesoongan.notificationapi.notification.repository.NotificationSettingRepository;
@@ -50,19 +51,33 @@ class NotificationServiceTest {
     @Test
     void getNotificationsReturnsUnreadCountAndItems() {
         Long memberId = 1L;
-        Notification notification = notification(10L, memberId, "TRADE_EXECUTED", false);
+        Notification tradeNotification = notification(10L, memberId, "TRADE_EXECUTED", false);
+        Notification cancelNotification = notification(11L, memberId, "ORDER_CANCELLED", true);
+        Notification nullTypeNotification = notification(12L, memberId, null, false);
 
-        when(notificationRepository.countByMemberIdAndReadFalse(memberId)).thenReturn(1L);
+        when(notificationRepository.countByMemberIdAndReadFalse(memberId)).thenReturn(2L);
         when(notificationRepository.findByMemberIdOrderByCreatedAtDescIdDesc(memberId))
-                .thenReturn(List.of(notification));
+                .thenReturn(List.of(tradeNotification, cancelNotification, nullTypeNotification));
 
         NotificationListResponse response = notificationService.getNotifications(memberId);
 
-        assertEquals(1L, response.unreadCount());
-        assertEquals(1, response.items().size());
+        assertEquals(2L, response.unreadCount());
+        assertEquals(3, response.items().size());
         assertEquals(10L, response.items().get(0).notificationId());
         assertEquals("TRADE", response.items().get(0).type());
+        assertEquals("ORDER_CANCEL", response.items().get(1).type());
+        assertEquals("NOTICE", response.items().get(2).type());
         assertFalse(response.items().get(0).isRead());
+    }
+
+    @Test
+    void getUnreadCountReturnsRepositoryCount() {
+        Long memberId = 1L;
+        when(notificationRepository.countByMemberIdAndReadFalse(memberId)).thenReturn(5L);
+
+        UnreadCountResponse response = notificationService.getUnreadCount(memberId);
+
+        assertEquals(5L, response.unreadCount());
     }
 
     @Test

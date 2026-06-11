@@ -1,6 +1,7 @@
 package com.mock.maesoongan.notificationapi.notification.controller;
 
 import com.mock.maesoongan.notificationapi.auth.CurrentMemberProvider;
+import com.mock.maesoongan.notificationapi.common.BusinessException;
 import com.mock.maesoongan.notificationapi.common.GlobalExceptionHandler;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.NotificationItem;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.NotificationListResponse;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -86,6 +88,18 @@ class NotificationControllerTest {
                 .andExpect(jsonPath("$.success", is(true)))
                 .andExpect(jsonPath("$.data.notificationId", is(10)))
                 .andExpect(jsonPath("$.data.isRead", is(true)));
+    }
+
+    @Test
+    void markAsReadReturnsNotFoundWhenNotificationDoesNotExist() throws Exception {
+        when(currentMemberProvider.memberId()).thenReturn(MEMBER_ID);
+        when(notificationService.markAsRead(MEMBER_ID, 999L))
+                .thenThrow(new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Notification not found"));
+
+        mockMvc.perform(patch("/api/notifications/{notificationId}/read", 999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success", is(false)))
+                .andExpect(jsonPath("$.code", is("NOT_FOUND")));
     }
 
     @Test
