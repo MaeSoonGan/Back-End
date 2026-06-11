@@ -102,7 +102,7 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
             case UNSUBSCRIBE_ORDERBOOK -> unsubscribeOrderbook(session, stockCodes);
             case SUBSCRIBE_INDEX -> subscribeIndex(session, markets);
             case UNSUBSCRIBE_INDEX -> unsubscribeIndex(session, markets);
-            case RESET -> quoteIngestionService.resetSource();
+            case RESET -> resetRealtime();
         }
         send(session, MarketWebSocketMessage.subscriptionAck(subscriptionAck(request, stockCodes, markets)));
     }
@@ -180,6 +180,24 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
             } catch (IOException exception) {
                 log.warn("Failed to send realtime status. sessionId={}", session.getId());
             }
+        }
+    }
+
+    // 페이지 이동 RESET: 소스 연결/추적 목록을 초기화한 뒤, 현재 활성 구독(실제 수요)만 다시 등록.
+    // → 재연결 후 onConnected가 이 깨끗한 목록만 KIS에 등록 = pod 재시작과 동일한 효과.
+    private void resetRealtime() {
+        quoteIngestionService.resetSource();
+        List<String> prices = List.copyOf(priceSubscriberCounts.keySet());
+        List<String> orderbooks = List.copyOf(orderbookSubscriberCounts.keySet());
+        List<String> indexes = List.copyOf(indexSubscriberCounts.keySet());
+        if (!prices.isEmpty()) {
+            quoteIngestionService.subscribePrices(prices);
+        }
+        if (!orderbooks.isEmpty()) {
+            quoteIngestionService.subscribeOrderbooks(orderbooks);
+        }
+        if (!indexes.isEmpty()) {
+            quoteIngestionService.subscribeIndexes(indexes);
         }
     }
 
