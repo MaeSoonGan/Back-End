@@ -104,11 +104,13 @@ public class PortfolioService {
         StockPriceRow stock = portfolioRepository.findStockPrice(normalizedCode)
                 .orElse(new StockPriceRow(normalizedCode, normalizedCode, BigDecimal.ZERO));
 
+        BigDecimal avgPrice = portfolioRepository.findAverageBuyPrice(memberId, resolvedContestId, normalizedCode)
+                .orElse(value(stock.currentPrice()));
         return new HoldingDetailResponse(
                 normalizedCode,
                 holding.quantity(),
                 availableQuantity,
-                value(stock.currentPrice())
+                avgPrice
         );
     }
 
@@ -220,7 +222,9 @@ public class PortfolioService {
         BigDecimal currentPrice = value(stock.currentPrice());
         BigDecimal quantity = BigDecimal.valueOf(holding.quantity());
         BigDecimal valuation = currentPrice.multiply(quantity);
-        BigDecimal avgPrice = currentPrice;
+        // 평균 체결가 = trade_history 매수 가중평균 (체결 이력 없으면 현재가로 폴백 → 수익률 0)
+        BigDecimal avgPrice = portfolioRepository.findAverageBuyPrice(memberId, contestId, holding.stockCode())
+                .orElse(currentPrice);
         BigDecimal purchaseAmount = avgPrice.multiply(quantity);
         BigDecimal profitAmount = valuation.subtract(purchaseAmount);
         BigDecimal profitRate = purchaseAmount.compareTo(BigDecimal.ZERO) == 0

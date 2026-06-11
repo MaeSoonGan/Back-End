@@ -2,11 +2,13 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter.kis;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mock.maesoongan.realtimequoteingestor.market.event.MarketRealtimeStatusEvent;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteEventHandler;
 import com.mock.maesoongan.realtimequoteingestor.quote.port.QuoteSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -37,8 +39,13 @@ public class KisQuoteSource implements QuoteSource {
     private final KisApprovalKeyClient approvalKeyClient;
     private final KisRealtimeParser parser;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final HttpClient httpClient;
     private final ScheduledExecutorService reconnectExecutor;
+    // MAX SUBSCRIBE OVER 시 KIS 재연결로 등록 초기화 (잦은 재연결 루프 방지 throttle)
+    private static final long SUBSCRIBE_OVER_RECONNECT_INTERVAL_MS = 30_000;
+    private volatile long lastSubscribeOverReconnectAt;
+    private final AtomicBoolean recoveringFromSubscribeOver = new AtomicBoolean(false);
     private final Set<String> subscribedPriceCodes = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedOrderbookCodes = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedIndexes = ConcurrentHashMap.newKeySet();
@@ -60,12 +67,14 @@ public class KisQuoteSource implements QuoteSource {
             KisProperties properties,
             KisApprovalKeyClient approvalKeyClient,
             KisRealtimeParser parser,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher applicationEventPublisher
     ) {
         this.properties = properties;
         this.approvalKeyClient = approvalKeyClient;
         this.parser = parser;
         this.objectMapper = objectMapper;
+        this.applicationEventPublisher = applicationEventPublisher;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
@@ -233,6 +242,30 @@ public class KisQuoteSource implements QuoteSource {
         subscribedPriceCodes.forEach(code -> sendSubscription(properties.priceTrId(), code, "1"));
         subscribedOrderbookCodes.forEach(code -> sendSubscription(properties.orderbookTrId(), code, "1"));
         subscribedIndexes.forEach(market -> sendIndexSubscription(market, "1"));
+        // 한도 초과로 재연결한 경우 → 복구 완료 알림
+        if (recoveringFromSubscribeOver.compareAndSet(true, false)) {
+            applicationEventPublisher.publishEvent(new MarketRealtimeStatusEvent(false));
+        }
+    }
+
+    // KIS 등록 한도 초과 시: 현재 연결을 끊고 재연결.
+    // → connect()가 새 approval_key 발급(한도 초기화), onConnected()가 현재 ref-count 구독만 재등록.
+    //   누적된 유령 등록이 사라짐. throttle(30초)로 잦은 재연결 루프를 방지한다.
+    private void reconnectForSubscribeOver() {
+        long now = System.currentTimeMillis();
+        if (now - lastSubscribeOverReconnectAt < SUBSCRIBE_OVER_RECONNECT_INTERVAL_MS) {
+            return;
+        }
+        lastSubscribeOverReconnectAt = now;
+        log.warn("KIS MAX SUBSCRIBE OVER 감지 → KIS 재연결로 등록 초기화");
+        recoveringFromSubscribeOver.set(true);
+        applicationEventPublisher.publishEvent(new MarketRealtimeStatusEvent(true));
+        connected.set(false);
+        WebSocket socket = webSocket;
+        if (socket != null) {
+            socket.abort();
+        }
+        scheduleReconnect(); // abort 시 onClose가 호출되지 않을 수 있어 명시적으로 재연결 예약
     }
 
     private void sendSubscription(String trId, String stockCode, String trType) {
@@ -349,6 +382,9 @@ public class KisQuoteSource implements QuoteSource {
             String key = output.path("key").asText();
             if (!rtCd.isBlank() || !msg1.isBlank()) {
                 log.info("KIS realtime control message. trId={}, trKey={}, rtCd={}, msg={}", trId, trKey, rtCd, msg1);
+            }
+            if (msg1 != null && msg1.toUpperCase(Locale.ROOT).contains("MAX SUBSCRIBE OVER")) {
+                reconnectForSubscribeOver();
             }
             if (!trId.isBlank() && !iv.isBlank() && !key.isBlank()) {
                 encryptionContexts.put(trId, new KisRealtimeParser.EncryptionContext(iv, key));

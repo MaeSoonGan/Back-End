@@ -69,6 +69,18 @@ public class PortfolioRepository {
         return quantity == null ? 0 : quantity;
     }
 
+    // 보유종목 평균 체결가(매수 가중평균) = Σ(체결금액) / Σ(체결수량), BUY 한정
+    public Optional<BigDecimal> findAverageBuyPrice(long memberId, long contestId, String stockCode) {
+        return queryOne("""
+                select sum(executed_amount) / nullif(sum(executed_quantity), 0) as avg_price
+                from trade_history
+                where member_id = ?
+                  and contest_id = ?
+                  and stock_code = ?
+                  and side = 'BUY'
+                """, (rs, rowNum) -> rs.getBigDecimal("avg_price"), memberId, contestId, stockCode);
+    }
+
     public Optional<ContestAccountRow> findContestAccount(long memberId, long contestId) {
         return queryOne("""
                 select c.id as contest_id,
