@@ -31,7 +31,7 @@ spec:
         role: realtime
       containers:
         - name: market-realtime-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-realtime-service:79e1fd011e044e13803911694d94f542802698f5
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-realtime-service:500ef6b91583a9b3fc486ae27a206ac233ff8866
           imagePullPolicy: Always
           ports:
             - containerPort: 8087
