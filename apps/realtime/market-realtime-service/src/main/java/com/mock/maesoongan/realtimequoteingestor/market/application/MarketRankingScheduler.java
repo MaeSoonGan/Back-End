@@ -13,9 +13,14 @@ public class MarketRankingScheduler {
     private static final Logger log = LoggerFactory.getLogger(MarketRankingScheduler.class);
 
     private final MarketRankingService marketRankingService;
+    private final MarketIndexQuoteService marketIndexQuoteService;
 
-    public MarketRankingScheduler(MarketRankingService marketRankingService) {
+    public MarketRankingScheduler(
+            MarketRankingService marketRankingService,
+            MarketIndexQuoteService marketIndexQuoteService
+    ) {
         this.marketRankingService = marketRankingService;
+        this.marketIndexQuoteService = marketIndexQuoteService;
     }
 
     @Scheduled(
@@ -27,6 +32,18 @@ public class MarketRankingScheduler {
             marketRankingService.refreshHtsTopViewRanking();
         } catch (RuntimeException exception) {
             log.warn("Failed to refresh KIS HTS top view ranking cache", exception);
+        }
+    }
+
+    @Scheduled(
+            initialDelayString = "${ranking.hts-top-view.initial-delay-ms:1000}",
+            fixedDelayString = "${ranking.hts-top-view.poll-interval-ms:10000}"
+    )
+    public void refreshIndices() {
+        try {
+            marketIndexQuoteService.refreshIndices();
+        } catch (RuntimeException exception) {
+            log.warn("Failed to refresh KIS index quote cache", exception);
         }
     }
 }

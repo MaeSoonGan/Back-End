@@ -1,12 +1,16 @@
 package com.mock.maesoongan.realtimequoteingestor.market.api;
 
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketIndexQuoteService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketRankingService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketStatusService;
+import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketIndexResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPriceResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPricesResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketRankingResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusResponse;
+
+import java.util.List;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,15 +29,18 @@ public class MarketRestController {
     private final MarketPriceService marketPriceService;
     private final MarketStatusService marketStatusService;
     private final MarketRankingService marketRankingService;
+    private final MarketIndexQuoteService marketIndexQuoteService;
 
     public MarketRestController(
             MarketPriceService marketPriceService,
             MarketStatusService marketStatusService,
-            MarketRankingService marketRankingService
+            MarketRankingService marketRankingService,
+            MarketIndexQuoteService marketIndexQuoteService
     ) {
         this.marketPriceService = marketPriceService;
         this.marketStatusService = marketStatusService;
         this.marketRankingService = marketRankingService;
+        this.marketIndexQuoteService = marketIndexQuoteService;
     }
 
     @GetMapping("/api/market/price/{stockCode}")
@@ -58,6 +65,15 @@ public class MarketRestController {
             @RequestParam String codes
     ) {
         return marketPriceService.getPrices(codes);
+    }
+
+    @GetMapping("/api/market/indices")
+    @Operation(
+            summary = "코스피/코스닥 지수 조회",
+            description = "백엔드가 KIS 국내업종 현재지수 REST를 주기적으로 호출해 Redis에 저장한 코스피/코스닥 지수를 반환합니다. ws 구독 없이 폴링으로 사용합니다."
+    )
+    public List<MarketIndexResponse> indices() {
+        return marketIndexQuoteService.getIndices();
     }
 
     @GetMapping("/api/market/status")

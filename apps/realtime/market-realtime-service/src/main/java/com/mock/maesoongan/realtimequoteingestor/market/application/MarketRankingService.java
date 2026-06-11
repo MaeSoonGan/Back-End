@@ -3,6 +3,7 @@ package com.mock.maesoongan.realtimequoteingestor.market.application;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.realtimequoteingestor.common.BusinessException;
+import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisCurrentPriceClient;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisHtsTopViewClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketRankingItemResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketRankingResponse;
@@ -26,6 +27,7 @@ public class MarketRankingService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final KisHtsTopViewClient kisHtsTopViewClient;
+    private final KisCurrentPriceClient kisCurrentPriceClient;
     private final StockNameResolver stockNameResolver;
     private final Duration ttl;
     private final ZoneId zoneId = ZoneId.of("Asia/Seoul");
@@ -34,12 +36,14 @@ public class MarketRankingService {
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             KisHtsTopViewClient kisHtsTopViewClient,
+            KisCurrentPriceClient kisCurrentPriceClient,
             StockNameResolver stockNameResolver,
             @Value("${ranking.hts-top-view.cache-ttl-seconds:30}") long ttlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.kisHtsTopViewClient = kisHtsTopViewClient;
+        this.kisCurrentPriceClient = kisCurrentPriceClient;
         this.stockNameResolver = stockNameResolver;
         this.ttl = Duration.ofSeconds(ttlSeconds);
     }
@@ -67,17 +71,9 @@ public class MarketRankingService {
             return getHtsTopViewRanking();
         }
 
-        // KIS 조회상위 응답은 종목명을 주지 않아(코드로 폴백) 종목 마스터로 이름을 보강한다.
+        // KIS 조회상위 응답은 순위+코드만 줘서(가격 0, 이름=코드) 종목별 현재가 조회(REST)로 가격·이름을 보강한다.
         List<MarketRankingItemResponse> enriched = items.stream()
-                .map(item -> new MarketRankingItemResponse(
-                        item.rank(),
-                        item.stockCode(),
-                        stockNameResolver.resolve(item.stockCode(), item.stockName()),
-                        item.currentPrice(),
-                        item.changePrice(),
-                        item.changeRate(),
-                        item.volume()
-                ))
+                .map(this::enrichItem)
                 .toList();
 
         MarketRankingResponse response = new MarketRankingResponse(
@@ -87,6 +83,31 @@ public class MarketRankingService {
         );
         redisTemplate.opsForValue().set(HTS_TOP_VIEW_KEY, toJson(response), ttl);
         return response;
+    }
+
+    // 종목별 현재가 조회(REST)로 가격·이름 보강. 조회 실패 시 원본 + 종목마스터 이름으로 폴백.
+    private MarketRankingItemResponse enrichItem(MarketRankingItemResponse item) {
+        return kisCurrentPriceClient.fetchPrice(item.stockCode())
+                .map(price -> new MarketRankingItemResponse(
+                        item.rank(),
+                        item.stockCode(),
+                        StringUtils.hasText(price.stockName())
+                                ? price.stockName()
+                                : stockNameResolver.resolve(item.stockCode(), item.stockName()),
+                        price.currentPrice(),
+                        price.changePrice(),
+                        price.changeRate(),
+                        price.volume()
+                ))
+                .orElseGet(() -> new MarketRankingItemResponse(
+                        item.rank(),
+                        item.stockCode(),
+                        stockNameResolver.resolve(item.stockCode(), item.stockName()),
+                        item.currentPrice(),
+                        item.changePrice(),
+                        item.changeRate(),
+                        item.volume()
+                ));
     }
 
     private String toJson(MarketRankingResponse response) {
