@@ -97,6 +97,11 @@ public class QuoteIngestionService implements QuoteEventHandler {
         quoteSource.unsubscribeIndexes(markets);
     }
 
+    // 페이지 이동 시 클라이언트 요청으로 소스 연결 초기화(누적 등록 비우기)
+    public void resetSource() {
+        quoteSource.reset();
+    }
+
     @Override
     public void handlePrice(PriceQuoteEvent event) {
         try {
