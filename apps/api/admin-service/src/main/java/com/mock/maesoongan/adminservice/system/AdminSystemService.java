@@ -134,6 +134,53 @@ public class AdminSystemService {
         return new AlertMutationResponse(alertId, "IGNORED", "Alert ignored");
     }
 
+    /**
+     * 회원 비정상 알림(로그인 실패 자동 정지)에 대한 "정지 해제":
+     * 자동 정지를 풀고(원장 RELEASED + 회원 ACTIVE + 로그인 실패/잠금 초기화) 알림을 해결 처리한다.
+     * (login_fail_count를 0으로 만들지 않으면 스케줄러가 곧 재정지하므로 함께 초기화)
+     */
+    @Transactional
+    public AlertMutationResponse releaseAlert(long alertId, IgnoreAlertRequest request) {
+        ensureAlertExists(alertId);
+        long adminId = currentAdminId();
+        LocalDateTime now = LocalDateTime.now();
+
+        List<Long> memberIds = jdbcTemplate.queryForList("""
+                select target_id from monitoring_status
+                where id = ? and status_type = 'ABNORMAL_DETECTION' and target_type = 'MEMBER'
+                """, Long.class, alertId);
+        if (memberIds.isEmpty() || memberIds.get(0) == null) {
+            throw badRequest("정지 해제는 회원 대상 알림에만 가능합니다.");
+        }
+        long memberId = memberIds.get(0);
+
+        jdbcTemplate.update("""
+                update account_suspension
+                set status = 'RELEASED', released_at = ?, release_admin_id = ?, updated_at = ?
+                where member_id = ? and status <> 'RELEASED'
+                """, now, adminId, now, memberId);
+        jdbcTemplate.update("""
+                update member_snapshot
+                set status = 'ACTIVE', login_fail_count = 0, updated_at = ?, synced_at = ?
+                where member_id = ?
+                """, now, now, memberId);
+        jdbcTemplate.update("""
+                update dev_member_auth
+                set login_fail_count = 0, locked_until = null, updated_at = ?
+                where member_id = ?
+                """, now, memberId);
+
+        jdbcTemplate.update("""
+                update monitoring_status
+                set status = 'RESOLVED', updated_at = ?
+                where id = ? and status_type = 'ABNORMAL_DETECTION'
+                """, now, alertId);
+
+        insertAudit(adminId, "RELEASE_ABNORMAL_MEMBER", "MEMBER", memberId,
+                cleanReason(request == null ? null : request.reason(), "로그인 실패 자동 정지 해제"));
+        return new AlertMutationResponse(alertId, "RESOLVED", "Suspension released");
+    }
+
     @Transactional(readOnly = true)
     public MaintenanceResponse getMaintenance() {
         MaintenanceRow row = findMaintenance();

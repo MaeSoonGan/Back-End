@@ -37,9 +37,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -62,6 +65,7 @@ public class AuthService {
     private final RefreshTokenStore refreshTokenStore;
     private final VerificationCodeStore verificationCodeStore;
     private final EmailCodeSender emailCodeSender;
+    private final PlatformTransactionManager transactionManager;
 
     @Value("${app.portfolio.initial-cash:1000000}")
     private BigDecimal initialCash;
@@ -543,25 +547,31 @@ public class AuthService {
         LocalDateTime lockedUntil = nextFailCount >= 5 ? now.plusMinutes(30) : null;
         String status = nextFailCount >= 5 ? "SUSPENDED" : "ACTIVE";
 
-        jdbcTemplate.update("""
-                        update dev_member_auth
-                        set login_fail_count = ?, locked_until = ?, updated_at = ?
-                        where member_id = ?
-                        """,
-                nextFailCount,
-                lockedUntil,
-                now,
-                memberId);
-        jdbcTemplate.update("""
-                        update member_snapshot
-                        set login_fail_count = ?, status = ?, updated_at = ?, synced_at = ?
-                        where member_id = ?
-                        """,
-                nextFailCount,
-                status,
-                now,
-                now,
-                memberId);
+        // login()이 @Transactional이고 실패 시 예외를 던져 롤백되므로,
+        // 실패 카운트 증가는 별도 트랜잭션(REQUIRES_NEW)으로 커밋해 보존한다.
+        TransactionTemplate newTx = new TransactionTemplate(transactionManager);
+        newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        newTx.executeWithoutResult(ignored -> {
+            jdbcTemplate.update("""
+                            update dev_member_auth
+                            set login_fail_count = ?, locked_until = ?, updated_at = ?
+                            where member_id = ?
+                            """,
+                    nextFailCount,
+                    lockedUntil,
+                    now,
+                    memberId);
+            jdbcTemplate.update("""
+                            update member_snapshot
+                            set login_fail_count = ?, status = ?, updated_at = ?, synced_at = ?
+                            where member_id = ?
+                            """,
+                    nextFailCount,
+                    status,
+                    now,
+                    now,
+                    memberId);
+        });
     }
 
     private void resetLoginFailCount(long memberId) {

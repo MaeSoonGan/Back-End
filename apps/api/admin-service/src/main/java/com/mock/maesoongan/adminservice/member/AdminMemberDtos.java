@@ -97,7 +97,8 @@ public final class AdminMemberDtos {
             long totalSuspensionCount,
             long activeSuspensionCount,
             long releasedSuspensionCount,
-            long todaySuspensionCount
+            long todaySuspensionCount,
+            long autoSuspendedCount
     ) {
     }
 

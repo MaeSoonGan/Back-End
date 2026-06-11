@@ -72,7 +72,8 @@ public class AdminMemberService {
             LocalDate startDate,
             LocalDate endDate,
             int page,
-            int size
+            int size,
+            String sort
     ) {
         validatePage(page, size);
         MemberFilter filter = memberFilter(keyword, status, startDate, endDate);
@@ -101,9 +102,9 @@ public class AdminMemberService {
                             group by member_id
                         ) cp on cp.member_id = m.member_id
                         %s
-                        order by m.created_at desc, m.member_id desc
+                        %s
                         limit ? offset ?
-                        """.formatted(filter.whereClause()),
+                        """.formatted(filter.whereClause(), memberOrderBy(sort)),
                 (rs, rowNum) -> new MemberListItem(
                         rs.getLong("member_id"),
                         rs.getString("nickname"),
@@ -119,6 +120,29 @@ public class AdminMemberService {
                 args.toArray());
 
         return new PageResponse<>(content, total, totalPages(total, size), page);
+    }
+
+    // 정렬 컬럼은 허용목록으로만 매핑(SQL 인젝션 방지). 'field,asc|desc' 형식.
+    private String memberOrderBy(String sort) {
+        String tieBreak = ", m.member_id desc";
+        String defaultOrder = "order by m.created_at desc" + tieBreak;
+        if (sort == null || sort.isBlank()) {
+            return defaultOrder;
+        }
+        String[] parts = sort.split(",");
+        String column = switch (parts[0].trim()) {
+            case "joinedAt" -> "m.created_at";
+            case "contestCount" -> "contest_count";
+            case "totalAsset" -> "ps.total_asset";
+            case "profitRate" -> "ps.profit_rate";
+            case "loginFailCount" -> "m.login_fail_count";
+            default -> null;
+        };
+        if (column == null) {
+            return defaultOrder;
+        }
+        boolean asc = parts.length > 1 && "asc".equalsIgnoreCase(parts[1].trim());
+        return "order by " + column + (asc ? " asc" : " desc") + tieBreak;
     }
 
     @Transactional(readOnly = true)
@@ -316,13 +340,17 @@ public class AdminMemberService {
         LocalDate today = LocalDate.now();
         return new SuspensionSummaryResponse(
                 count("select count(*) from account_suspension"),
-                count("select count(*) from account_suspension where status = 'SUSPENDED'"),
+                // 현재 정지중(명): 해제되지 않은 정지의 회원 수 (active 값은 'SUSPENDED'/legacy 'ACTIVE' 모두 포함)
+                count("select count(distinct member_id) from account_suspension where status <> 'RELEASED'"),
                 count("select count(*) from account_suspension where status = 'RELEASED'"),
                 count("""
                         select count(*)
                         from account_suspension
                         where created_at >= ? and created_at < ?
-                        """, today.atStartOfDay(), today.plusDays(1).atStartOfDay())
+                        """, today.atStartOfDay(), today.plusDays(1).atStartOfDay()),
+                // 자동 정지(로그인 실패): 자동 정지 사유로 현재 정지중인 건수
+                count("select count(*) from account_suspension where status <> 'RELEASED' and reason = ?",
+                        "로그인 실패 누적 자동 정지")
         );
     }
 
@@ -333,7 +361,8 @@ public class AdminMemberService {
             LocalDate startDate,
             LocalDate endDate,
             int page,
-            int size
+            int size,
+            String sort
     ) {
         validatePage(page, size);
         HistoryFilter filter = suspensionFilter(keyword, status, startDate, endDate);
@@ -348,7 +377,7 @@ public class AdminMemberService {
         List<Object> args = new ArrayList<>(filter.args());
         args.add(size);
         args.add(page * size);
-        List<SuspensionHistoryItem> content = querySuspensionHistory(filter.whereClause(), args, "limit ? offset ?");
+        List<SuspensionHistoryItem> content = querySuspensionHistory(filter.whereClause(), suspensionOrderBy(sort), args, "limit ? offset ?");
 
         return new PageResponse<>(content, total, totalPages(total, size), page);
     }
@@ -420,9 +449,16 @@ public class AdminMemberService {
                 where id = ?
                 """, now, adminId, now, suspensionId);
 
+        // 정지 해제 시 로그인 실패 카운트/잠금도 초기화한다.
+        // (로그인 실패 누적 자동 정지였던 경우, 초기화하지 않으면 스케줄러가 곧 재정지함)
         jdbcTemplate.update("""
                 update member_snapshot
-                set status = 'ACTIVE', updated_at = ?
+                set status = 'ACTIVE', login_fail_count = 0, updated_at = ?
+                where member_id = ?
+                """, now, suspension.memberId());
+        jdbcTemplate.update("""
+                update dev_member_auth
+                set login_fail_count = 0, locked_until = null, updated_at = ?
                 where member_id = ?
                 """, now, suspension.memberId());
 
@@ -439,7 +475,7 @@ public class AdminMemberService {
     @Transactional(readOnly = true)
     public String exportSuspensions(String keyword, String status, LocalDate startDate, LocalDate endDate) {
         HistoryFilter filter = suspensionFilter(keyword, status, startDate, endDate);
-        List<SuspensionHistoryItem> rows = querySuspensionHistory(filter.whereClause(), filter.args(), "");
+        List<SuspensionHistoryItem> rows = querySuspensionHistory(filter.whereClause(), suspensionOrderBy(null), filter.args(), "");
         StringBuilder csv = new StringBuilder("suspensionId,memberId,nickname,accountId,reason,status,adminId,adminName,createdAt,releasedAt\n");
         for (SuspensionHistoryItem row : rows) {
             csv.append(csvLine(Arrays.asList(
@@ -537,7 +573,8 @@ public class AdminMemberService {
             LocalDate startDate,
             LocalDate endDate,
             int page,
-            int size
+            int size,
+            String sort
     ) {
         validatePage(page, size);
         HistoryFilter filter = seedFilter(keyword, status, startDate, endDate);
@@ -552,7 +589,7 @@ public class AdminMemberService {
         List<Object> args = new ArrayList<>(filter.args());
         args.add(size);
         args.add(page * size);
-        List<SeedPaymentHistoryItem> content = querySeedPaymentHistory(filter.whereClause(), args, "limit ? offset ?");
+        List<SeedPaymentHistoryItem> content = querySeedPaymentHistory(filter.whereClause(), seedOrderBy(sort), args, "limit ? offset ?");
 
         return new PageResponse<>(content, total, totalPages(total, size), page);
     }
@@ -560,7 +597,7 @@ public class AdminMemberService {
     @Transactional(readOnly = true)
     public String exportSeedPayments(String keyword, String status, LocalDate startDate, LocalDate endDate) {
         HistoryFilter filter = seedFilter(keyword, status, startDate, endDate);
-        List<SeedPaymentHistoryItem> rows = querySeedPaymentHistory(filter.whereClause(), filter.args(), "");
+        List<SeedPaymentHistoryItem> rows = querySeedPaymentHistory(filter.whereClause(), seedOrderBy(null), filter.args(), "");
         StringBuilder csv = new StringBuilder("seedHistoryId,memberId,nickname,accountId,contestId,amount,reason,requestStatus,adminId,adminName,createdAt,processedAt\n");
         for (SeedPaymentHistoryItem row : rows) {
             csv.append(csvLine(Arrays.asList(
@@ -629,7 +666,7 @@ public class AdminMemberService {
                 memberId);
     }
 
-    private List<SuspensionHistoryItem> querySuspensionHistory(String whereClause, List<Object> args, String suffix) {
+    private List<SuspensionHistoryItem> querySuspensionHistory(String whereClause, String orderBy, List<Object> args, String suffix) {
         return jdbcTemplate.query("""
                         select s.id,
                                s.member_id,
@@ -645,14 +682,32 @@ public class AdminMemberService {
                         join member_snapshot m on m.member_id = s.member_id
                         left join admin a on a.id = s.admin_id
                         %s
-                        order by s.created_at desc, s.id desc
                         %s
-                        """.formatted(whereClause, suffix),
+                        %s
+                        """.formatted(whereClause, orderBy, suffix),
                 this::mapSuspensionHistory,
                 args.toArray());
     }
 
-    private List<SeedPaymentHistoryItem> querySeedPaymentHistory(String whereClause, List<Object> args, String suffix) {
+    // 정지내역 정렬(허용목록). 'processedAt|createdAt,asc|desc'
+    private String suspensionOrderBy(String sort) {
+        String tie = ", s.id desc";
+        if (sort == null || sort.isBlank()) {
+            return "order by s.created_at desc" + tie;
+        }
+        String[] parts = sort.split(",");
+        String column = switch (parts[0].trim()) {
+            case "processedAt", "createdAt" -> "s.created_at";
+            default -> null;
+        };
+        if (column == null) {
+            return "order by s.created_at desc" + tie;
+        }
+        boolean asc = parts.length > 1 && "asc".equalsIgnoreCase(parts[1].trim());
+        return "order by " + column + (asc ? " asc" : " desc") + tie;
+    }
+
+    private List<SeedPaymentHistoryItem> querySeedPaymentHistory(String whereClause, String orderBy, List<Object> args, String suffix) {
         return jdbcTemplate.query("""
                         select sh.id,
                                sh.member_id,
@@ -670,11 +725,30 @@ public class AdminMemberService {
                         join member_snapshot m on m.member_id = sh.member_id
                         left join admin a on a.id = sh.admin_id
                         %s
-                        order by sh.created_at desc, sh.id desc
                         %s
-                        """.formatted(whereClause, suffix),
+                        %s
+                        """.formatted(whereClause, orderBy, suffix),
                 this::mapSeedPaymentHistory,
                 args.toArray());
+    }
+
+    // 시드내역 정렬(허용목록). 'amount|paidAt|createdAt,asc|desc'
+    private String seedOrderBy(String sort) {
+        String tie = ", sh.id desc";
+        if (sort == null || sort.isBlank()) {
+            return "order by sh.created_at desc" + tie;
+        }
+        String[] parts = sort.split(",");
+        String column = switch (parts[0].trim()) {
+            case "amount" -> "sh.amount";
+            case "paidAt", "createdAt" -> "sh.created_at";
+            default -> null;
+        };
+        if (column == null) {
+            return "order by sh.created_at desc" + tie;
+        }
+        boolean asc = parts.length > 1 && "asc".equalsIgnoreCase(parts[1].trim());
+        return "order by " + column + (asc ? " asc" : " desc") + tie;
     }
 
     private SuspensionHistoryItem mapSuspensionHistory(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
