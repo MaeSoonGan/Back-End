@@ -22,5 +22,9 @@ public interface QuoteSource {
     default void unsubscribeIndexes(List<String> markets) {
     }
 
+    // 소스 연결 초기화(재연결). KIS의 경우 등록 한도 누적을 비우는 용도.
+    default void reset() {
+    }
+
     boolean isConnected();
 }

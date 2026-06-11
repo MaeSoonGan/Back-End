@@ -44,7 +44,10 @@ public class KisQuoteSource implements QuoteSource {
     private final ScheduledExecutorService reconnectExecutor;
     // MAX SUBSCRIBE OVER 시 KIS 재연결로 등록 초기화 (잦은 재연결 루프 방지 throttle)
     private static final long SUBSCRIBE_OVER_RECONNECT_INTERVAL_MS = 30_000;
+    // 클라이언트 요청(페이지 이동) 리셋: 빠른 연속 이동을 합치기 위한 짧은 throttle
+    private static final long RESET_MIN_INTERVAL_MS = 1_500;
     private volatile long lastSubscribeOverReconnectAt;
+    private volatile long lastResetAt;
     private final AtomicBoolean recoveringFromSubscribeOver = new AtomicBoolean(false);
     private final Set<String> subscribedPriceCodes = ConcurrentHashMap.newKeySet();
     private final Set<String> subscribedOrderbookCodes = ConcurrentHashMap.newKeySet();
@@ -258,6 +261,24 @@ public class KisQuoteSource implements QuoteSource {
         }
         lastSubscribeOverReconnectAt = now;
         log.warn("KIS MAX SUBSCRIBE OVER 감지 → KIS 재연결로 등록 초기화");
+        triggerReconnect();
+    }
+
+    // 클라이언트 요청(페이지 이동)에 의한 연결 리셋. 빠른 연속 이동은 짧은 throttle로 합친다.
+    @Override
+    public void reset() {
+        long now = System.currentTimeMillis();
+        if (now - lastResetAt < RESET_MIN_INTERVAL_MS) {
+            return;
+        }
+        lastResetAt = now;
+        log.info("KIS 연결 리셋 요청 → 재연결로 등록 초기화");
+        triggerReconnect();
+    }
+
+    // KIS 연결을 끊고 재연결. connect()가 새 approval_key 발급(한도 초기화),
+    // onConnected()가 현재 ref-count 구독만 재등록. 복구 상태 이벤트도 발행.
+    private void triggerReconnect() {
         recoveringFromSubscribeOver.set(true);
         applicationEventPublisher.publishEvent(new MarketRealtimeStatusEvent(true));
         connected.set(false);

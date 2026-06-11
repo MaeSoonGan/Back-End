@@ -102,6 +102,7 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
             case UNSUBSCRIBE_ORDERBOOK -> unsubscribeOrderbook(session, stockCodes);
             case SUBSCRIBE_INDEX -> subscribeIndex(session, markets);
             case UNSUBSCRIBE_INDEX -> unsubscribeIndex(session, markets);
+            case RESET -> quoteIngestionService.resetSource();
         }
         send(session, MarketWebSocketMessage.subscriptionAck(subscriptionAck(request, stockCodes, markets)));
     }
