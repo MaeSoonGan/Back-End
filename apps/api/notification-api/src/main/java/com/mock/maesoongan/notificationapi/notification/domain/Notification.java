@@ -60,6 +60,28 @@ public class Notification {
     protected Notification() {
     }
 
+    public static Notification create(
+            Long memberId,
+            String type,
+            String title,
+            String body,
+            String targetType,
+            Long targetId
+    ) {
+        Notification notification = new Notification();
+        notification.memberId = memberId;
+        notification.type = type;
+        notification.title = title;
+        notification.body = body;
+        notification.targetType = targetType;
+        notification.targetId = targetId;
+        notification.read = false;
+        notification.deliveryStatus = "CREATED";
+        notification.retryCount = 0;
+        notification.createdAt = LocalDateTime.now();
+        return notification;
+    }
+
     public Long getId() {
         return id;
     }

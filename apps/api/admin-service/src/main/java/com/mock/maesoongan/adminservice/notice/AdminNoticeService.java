@@ -7,6 +7,8 @@ import com.mock.maesoongan.adminservice.notice.AdminNoticeDtos.NoticeListItem;
 import com.mock.maesoongan.adminservice.notice.AdminNoticeDtos.NoticeMutationResponse;
 import com.mock.maesoongan.adminservice.notice.AdminNoticeDtos.NoticeUpdateRequest;
 import com.mock.maesoongan.adminservice.notice.AdminNoticeDtos.PageResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,6 +28,7 @@ import java.util.Locale;
 @Service
 public class AdminNoticeService {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminNoticeService.class);
     private static final int DEFAULT_ADMIN_ID = 1;
 
     private final JdbcTemplate jdbcTemplate;
@@ -128,6 +131,22 @@ public class AdminNoticeService {
         }
     }
 
+    // 공지 생성 시 전체 활성 회원에게 알림 팬아웃(INSERT...SELECT 한 번). 공지는 수신설정 게이트 없음(항상).
+    private void notifyNoticeCreated(long noticeId, String title, String content) {
+        try {
+            String body = content == null ? "" : (content.length() > 200 ? content.substring(0, 200) : content);
+            jdbcTemplate.update("""
+                    insert into notification
+                        (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
+                    select m.member_id, 'NOTICE', ?, ?, 0, 'NOTICE', ?, 'CREATED', 0, now()
+                    from member_snapshot m
+                    where m.status = 'ACTIVE'
+                    """, "[공지] " + title, body, noticeId);
+        } catch (RuntimeException exception) {
+            log.warn("Failed to fan-out notice notification. noticeId={}, err={}", noticeId, exception.getMessage());
+        }
+    }
+
     @Transactional
     public NoticeMutationResponse createNotice(NoticeCreateRequest request) {
         LocalDateTime startAt = defaultStartAt(request.startAt());
@@ -169,6 +188,7 @@ public class AdminNoticeService {
 
         long noticeId = key.longValue();
         insertAudit(adminId, "CREATE_NOTICE", "NOTICE", noticeId, request.title());
+        notifyNoticeCreated(noticeId, request.title(), request.content());
         return new NoticeMutationResponse(noticeId, status, "Notice created");
     }
 

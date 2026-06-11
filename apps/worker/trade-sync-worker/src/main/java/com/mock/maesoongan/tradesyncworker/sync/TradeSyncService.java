@@ -1,5 +1,6 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
+import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
@@ -18,24 +19,58 @@ public class TradeSyncService {
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
+    private final NotificationClient notificationClient;
 
-    public TradeSyncService(JdbcTemplate jdbcTemplate, PlatformTransactionManager transactionManager) {
+    public TradeSyncService(
+            JdbcTemplate jdbcTemplate,
+            PlatformTransactionManager transactionManager,
+            NotificationClient notificationClient
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.notificationClient = notificationClient;
     }
 
     public SyncResult syncOrder(OrderSyncRequest request) {
-        return processEvent(
+        SyncResult result = processEvent(
                 request.eventId(),
                 "ORDER_SNAPSHOT_SYNC",
                 "ORDER",
                 String.valueOf(request.orderId()),
                 () -> upsertOrderSnapshot(request)
         );
+        // 취소 확정된 주문만 알림(신규 처리 건). 트랜잭션 밖, best-effort.
+        if ("SUCCESS".equals(result.processStatus())) {
+            notifyOrderCanceled(request);
+        }
+        return result;
+    }
+
+    private void notifyOrderCanceled(OrderSyncRequest request) {
+        String status = request.status() == null ? "" : request.status().toUpperCase(Locale.ROOT);
+        if (!"CANCELED".equals(status) && !"CANCELLED".equals(status)) {
+            return;
+        }
+        boolean buy = "BUY".equalsIgnoreCase(request.side());
+        String stockName = (request.stockName() == null || request.stockName().isBlank())
+                ? request.stockCode()
+                : request.stockName();
+        String reason = (request.rejectReason() == null || request.rejectReason().isBlank())
+                ? "주문이 취소되었습니다"
+                : request.rejectReason();
+        String body = String.format(
+                Locale.KOREA,
+                "%s %d주 %s 주문 취소 · %s",
+                stockName,
+                request.orderQuantity(),
+                buy ? "매수" : "매도",
+                reason
+        );
+        notificationClient.create(request.memberId(), "ORDER_CANCELED", "주문 취소", body, "ORDER", request.orderId());
     }
 
     public SyncResult syncTrade(TradeSyncRequest request) {
-        return processEvent(
+        SyncResult result = processEvent(
                 request.eventId(),
                 "TRADE_HISTORY_SYNC",
                 "TRADE",
@@ -45,6 +80,28 @@ public class TradeSyncService {
                     updateOrderByTrade(request);
                 }
         );
+        // 신규 체결 성공 건만 알림(중복 처리/SKIPPED 제외). 트랜잭션 밖, best-effort.
+        if ("SUCCESS".equals(result.processStatus())) {
+            notifyTradeFilled(request);
+        }
+        return result;
+    }
+
+    private void notifyTradeFilled(TradeSyncRequest request) {
+        boolean buy = "BUY".equalsIgnoreCase(request.side());
+        String type = buy ? "TRADE_FILLED_BUY" : "TRADE_FILLED_SELL";
+        String stockName = (request.stockName() == null || request.stockName().isBlank())
+                ? request.stockCode()
+                : request.stockName();
+        String body = String.format(
+                Locale.KOREA,
+                "%s %d주 %s 체결 · 체결가 %,d원",
+                stockName,
+                request.executedQuantity(),
+                buy ? "매수" : "매도",
+                request.executedPrice().longValue()
+        );
+        notificationClient.create(request.memberId(), type, "체결 완료", body, "ORDER", request.orderId());
     }
 
     public SyncResult syncPortfolio(PortfolioSyncRequest request) {
