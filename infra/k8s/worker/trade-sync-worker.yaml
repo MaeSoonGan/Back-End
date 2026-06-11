@@ -31,7 +31,7 @@ spec:
         role: async
       containers:
         - name: trade-sync-worker
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/trade-sync-worker:9a6d870e01a6a01f2dcb643c63bb61c7d12ba5fe
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/trade-sync-worker:6a7b3d6da4d140d828d474c081c3117c9f553eec
           imagePullPolicy: Always
           ports:
             - containerPort: 8088
