@@ -13,7 +13,7 @@ data:
   SPRING_DATA_REDIS_SSL_ENABLED: "true"
   SPRING_DATA_REDIS_TIMEOUT: 3s
   REDIS_SSL_VERIFY_PEER: "true"
-  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_BOOTSTRAP_SERVERS: kafka.internal.maesoongan.xyz:9092
   ORDER_REQUESTED_TOPIC: order-requested
   ORDER_CANCEL_REQUESTED_TOPIC: order-cancel-requested
   KAFKA_SEND_TIMEOUT: 3s
@@ -24,9 +24,9 @@ data:
   SPRING_MAIL_SMTP_AUTH: "true"
   SPRING_MAIL_SMTP_STARTTLS_ENABLE: "false"
   SPRING_MAIL_SMTP_SSL_ENABLE: "true"
-  KIS_BASE_URL: https://openapivts.koreainvestment.com:29443
-  KIS_TOKEN_URL: https://openapivts.koreainvestment.com:29443/oauth2/tokenP
-  KIS_ENVIRONMENT: demo
+  KIS_BASE_URL: https://openapi.koreainvestment.com:9443
+  KIS_TOKEN_URL: https://openapi.koreainvestment.com:9443/oauth2/tokenP
+  KIS_ENVIRONMENT: real
   KIS_ACCOUNT_PRODUCT_CODE: "01"
   KIS_CUSTOMER_TYPE: P
   KIS_EXCHANGE_ID: KRX
