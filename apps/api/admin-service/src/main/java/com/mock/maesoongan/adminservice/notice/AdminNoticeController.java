@@ -39,9 +39,10 @@ public class AdminNoticeController {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "ALL") String status,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String sort
     ) {
-        return ApiResponse.success(adminNoticeService.getNotices(keyword, status, page, size));
+        return ApiResponse.success(adminNoticeService.getNotices(keyword, status, page, size, sort));
     }
 
     @Operation(summary = "Get notice detail")

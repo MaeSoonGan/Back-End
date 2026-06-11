@@ -76,6 +76,15 @@ public class AdminSystemController {
         return ApiResponse.success(adminSystemService.ignoreAlert(alertId, request));
     }
 
+    @Operation(summary = "Release member suspension from a member abnormal alert")
+    @PatchMapping("/monitoring/alerts/{alertId}/release")
+    public ApiResponse<AlertMutationResponse> releaseAlert(
+            @PathVariable long alertId,
+            @RequestBody(required = false) IgnoreAlertRequest request
+    ) {
+        return ApiResponse.success(adminSystemService.releaseAlert(alertId, request));
+    }
+
     @Operation(summary = "Get maintenance mode")
     @GetMapping("/system/maintenance")
     public ApiResponse<MaintenanceResponse> getMaintenance() {

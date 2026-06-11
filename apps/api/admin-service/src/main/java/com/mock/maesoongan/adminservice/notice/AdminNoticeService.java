@@ -35,7 +35,7 @@ public class AdminNoticeService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<NoticeListItem> getNotices(String keyword, String status, int page, int size) {
+    public PageResponse<NoticeListItem> getNotices(String keyword, String status, int page, int size, String sort) {
         validatePage(page, size);
         NoticeFilter filter = noticeFilter(keyword, status);
 
@@ -58,9 +58,9 @@ public class AdminNoticeService {
                         from notice n
                         left join admin a on a.id = n.admin_id
                         %s
-                        order by n.is_pinned desc, n.created_at desc, n.id desc
+                        %s
                         limit ? offset ?
-                        """.formatted(filter.whereClause()),
+                        """.formatted(filter.whereClause(), noticeOrderBy(sort)),
                 (rs, rowNum) -> new NoticeListItem(
                         rs.getLong("id"),
                         rs.getString("title"),
@@ -76,6 +76,18 @@ public class AdminNoticeService {
                 args.toArray());
 
         return new PageResponse<>(content, total, totalPages(total, size), page);
+    }
+
+    // 공지 정렬: 고정글(is_pinned) 우선은 항상 유지, 작성일 방향만 가변. 허용 컬럼은 createdAt만.
+    private String noticeOrderBy(String sort) {
+        boolean asc = false;
+        if (sort != null && !sort.isBlank()) {
+            String[] parts = sort.split(",");
+            if ("createdAt".equals(parts[0].trim()) && parts.length > 1) {
+                asc = "asc".equalsIgnoreCase(parts[1].trim());
+            }
+        }
+        return "order by n.is_pinned desc, n.created_at " + (asc ? "asc" : "desc") + ", n.id desc";
     }
 
     @Transactional(readOnly = true)
