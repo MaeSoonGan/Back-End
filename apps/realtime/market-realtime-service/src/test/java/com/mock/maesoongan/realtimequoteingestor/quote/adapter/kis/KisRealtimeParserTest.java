@@ -147,6 +147,10 @@ class KisRealtimeParserTest {
                 "HHMCM000100C0",
                 "/uapi/domestic-stock/v1/ranking/hts-top-view",
                 "FID_COND_MRKT_DIV_CODE=J",
+                "FHKST01010100",
+                "/uapi/domestic-stock/v1/quotations/inquire-price",
+                "FHPUP02100000",
+                "/uapi/domestic-stock/v1/quotations/inquire-index-price",
                 "P"
         );
     }

@@ -2,8 +2,10 @@ package com.mock.maesoongan.realtimequoteingestor.market.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisCurrentPriceClient;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisHtsTopViewClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketRankingItemResponse;
+import com.mock.maesoongan.realtimequoteingestor.stock.StockNameResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -11,6 +13,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,7 +29,9 @@ class MarketRankingServiceTest {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         ValueOperations<String, String> valueOperations = mockValueOperations(redisTemplate);
         KisHtsTopViewClient client = mock(KisHtsTopViewClient.class);
-        MarketRankingService service = new MarketRankingService(redisTemplate, objectMapper(), client, 30);
+        KisCurrentPriceClient currentPriceClient = mock(KisCurrentPriceClient.class);
+        StockNameResolver stockNameResolver = mock(StockNameResolver.class);
+        MarketRankingService service = new MarketRankingService(redisTemplate, objectMapper(), client, currentPriceClient, stockNameResolver, 30);
 
         when(client.fetchTopViewRanking()).thenReturn(List.of(
                 new MarketRankingItemResponse(
@@ -39,6 +44,8 @@ class MarketRankingServiceTest {
                         12_300_000L
                 )
         ));
+        when(currentPriceClient.fetchPrice("005930")).thenReturn(Optional.empty());
+        when(stockNameResolver.resolve("005930", "Samsung Electronics")).thenReturn("Samsung Electronics");
 
         assertEquals(1, service.refreshHtsTopViewRanking().items().size());
         verify(valueOperations).set(
