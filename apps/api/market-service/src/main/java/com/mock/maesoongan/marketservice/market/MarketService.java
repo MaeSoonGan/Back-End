@@ -24,10 +24,16 @@ public class MarketService {
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final LocalTime OPEN_TIME = LocalTime.of(9, 0);
     private static final LocalTime CLOSE_TIME = LocalTime.of(15, 30);
+    private static final String RANKING_TYPE_TRADING_VALUE = "TRADING_VALUE";
+    private static final String RANKING_TYPE_RISE = "RISE";
+    private static final String RANKING_TYPE_FALL = "FALL";
     private static final Map<String, String> RANKING_TYPES = Map.of(
-            "거래대금", "TRADING_VALUE",
-            "상승", "RISE",
-            "하락", "FALL"
+            "\uAC70\uB798\uB300\uAE08", RANKING_TYPE_TRADING_VALUE,
+            RANKING_TYPE_TRADING_VALUE, RANKING_TYPE_TRADING_VALUE,
+            "\uC0C1\uC2B9", RANKING_TYPE_RISE,
+            RANKING_TYPE_RISE, RANKING_TYPE_RISE,
+            "\uD558\uB77D", RANKING_TYPE_FALL,
+            RANKING_TYPE_FALL, RANKING_TYPE_FALL
     );
 
     private final MarketDataRepository marketDataRepository;
@@ -96,13 +102,16 @@ public class MarketService {
 
     private String normalizeRankingType(String type) {
         if (type == null || type.isBlank()) {
-            return RANKING_TYPES.get("거래대금");
+            return RANKING_TYPE_TRADING_VALUE;
         }
 
         String normalized = type.trim();
         String rankingType = RANKING_TYPES.get(normalized);
         if (rankingType == null) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "type must be 거래대금, 상승, or 하락");
+            rankingType = RANKING_TYPES.get(normalized.toUpperCase(Locale.ROOT));
+        }
+        if (rankingType == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "BAD_REQUEST", "type must be trading value, rise, or fall");
         }
         return rankingType;
     }

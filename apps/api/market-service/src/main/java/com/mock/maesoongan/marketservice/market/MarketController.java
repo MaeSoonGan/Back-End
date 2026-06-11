@@ -39,7 +39,7 @@ public class MarketController {
     @Operation(summary = "Get market ranking")
     @GetMapping("/ranking")
     public ApiResponse<List<MarketRankingItem>> getMarketRanking(
-            @RequestParam(defaultValue = "거래대금") String type
+            @RequestParam(defaultValue = "\uAC70\uB798\uB300\uAE08") String type
     ) {
         return ApiResponse.success(marketService.getMarketRanking(type));
     }
