@@ -63,9 +63,10 @@ public class AdminMemberController {
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String sort
     ) {
-        return ApiResponse.success(adminMemberService.getMembers(keyword, status, startDate, endDate, page, size));
+        return ApiResponse.success(adminMemberService.getMembers(keyword, status, startDate, endDate, page, size, sort));
     }
 
     @Operation(summary = "Search members for admin selector")
@@ -114,9 +115,10 @@ public class AdminMemberController {
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String sort
     ) {
-        return ApiResponse.success(adminMemberService.getSuspensions(keyword, status, startDate, endDate, page, size));
+        return ApiResponse.success(adminMemberService.getSuspensions(keyword, status, startDate, endDate, page, size, sort));
     }
 
     @Operation(summary = "Export suspension history as CSV")
@@ -165,9 +167,10 @@ public class AdminMemberController {
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String sort
     ) {
-        return ApiResponse.success(adminMemberService.getSeedPayments(keyword, status, startDate, endDate, page, size));
+        return ApiResponse.success(adminMemberService.getSeedPayments(keyword, status, startDate, endDate, page, size, sort));
     }
 
     @Operation(summary = "Export seed money payment history as CSV")
