@@ -20,7 +20,25 @@ public final class NotificationDtos {
             String title,
             String body,
             boolean isRead,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            String targetType,
+            Long targetId
+    ) {
+    }
+
+    public record CreateNotificationRequest(
+            Long memberId,
+            String type,
+            String title,
+            String body,
+            String targetType,
+            Long targetId
+    ) {
+    }
+
+    public record CreateNotificationResponse(
+            Long notificationId,
+            boolean created
     ) {
     }
 
