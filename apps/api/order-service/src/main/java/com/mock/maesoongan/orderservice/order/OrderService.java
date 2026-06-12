@@ -16,6 +16,7 @@ import com.mock.maesoongan.orderservice.order.OrderRepository.OrderInsertCommand
 import com.mock.maesoongan.orderservice.order.OrderRepository.OrderRow;
 import com.mock.maesoongan.orderservice.order.OrderRepository.PortfolioRow;
 import com.mock.maesoongan.orderservice.order.OrderRepository.StockRow;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class OrderService {
     private final Duration cancelPendingTtl;
     private final Clock clock;
 
+    @Autowired
     public OrderService(
             OrderRepository orderRepository,
             BalanceCache balanceCache,
