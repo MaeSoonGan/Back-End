@@ -120,3 +120,17 @@ spec:
                 name: order-service
                 port:
                   number: 8084
+          - path: /api/notifications
+            pathType: Prefix
+            backend:
+              service:
+                name: notification-api
+                port:
+                  number: 8086
+          - path: /api/notices
+            pathType: Prefix
+            backend:
+              service:
+                name: notification-api
+                port:
+                  number: 8086

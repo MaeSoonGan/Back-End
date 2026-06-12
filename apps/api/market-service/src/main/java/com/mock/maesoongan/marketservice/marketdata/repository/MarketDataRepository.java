@@ -265,6 +265,18 @@ public class MarketDataRepository {
                 """, stockCode, currentPrice, changeAmount, changeRate, volume);
     }
 
+    // 점검 모드 활성 여부 (admin이 monitoring_status에 기록한 MAINTENANCE 상태)
+    public boolean isMaintenanceEnabled() {
+        List<Boolean> rows = jdbcTemplate.query("""
+                select case when status = 'ENABLED' or is_maintenance = 1 then true else false end as enabled
+                from monitoring_status
+                where status_type = 'MAINTENANCE' and target_type = 'SYSTEM'
+                order by coalesce(updated_at, created_at) desc, id desc
+                limit 1
+                """, (rs, rowNum) -> rs.getBoolean("enabled"));
+        return !rows.isEmpty() && Boolean.TRUE.equals(rows.get(0));
+    }
+
     public Optional<MarketIndexRow> findMarketIndex(String market) {
         return queryOne("""
                 select market,
