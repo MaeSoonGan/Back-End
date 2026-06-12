@@ -107,6 +107,45 @@ public final class SyncDtos {
     ) {
     }
 
+    @Schema(description = "On-prem execution.confirmed Kafka event")
+    public record ExecutionConfirmedEvent(
+            @NotNull(message = "executionId is required")
+            Long executionId,
+
+            @NotNull(message = "orderId is required")
+            Long orderId,
+
+            @NotNull(message = "accountId is required")
+            Long accountId,
+
+            @NotBlank(message = "stockCode is required")
+            String stockCode,
+
+            String stockName,
+
+            @NotBlank(message = "orderType is required")
+            String orderType,
+
+            @NotNull(message = "executedPrice is required")
+            BigDecimal executedPrice,
+
+            @NotNull(message = "executedQuantity is required")
+            @Positive(message = "executedQuantity must be positive")
+            Integer executedQuantity,
+
+            @NotNull(message = "executedAmount is required")
+            BigDecimal executedAmount,
+
+            BigDecimal updatedDeposit,
+            BigDecimal updatedAvailableBalance,
+            Integer holdingQuantity,
+            BigDecimal holdingAveragePrice,
+
+            @NotNull(message = "confirmedAt is required")
+            LocalDateTime confirmedAt
+    ) {
+    }
+
     @Schema(description = "Portfolio snapshot sync request")
     public record PortfolioSyncRequest(
             @NotBlank(message = "eventId is required")

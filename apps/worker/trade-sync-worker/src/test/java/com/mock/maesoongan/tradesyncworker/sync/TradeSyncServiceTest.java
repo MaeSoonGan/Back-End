@@ -1,6 +1,7 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
@@ -9,17 +10,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -107,6 +111,34 @@ class TradeSyncServiceTest {
     }
 
     @Test
+    void syncExecutionConfirmedUsesExistingOrderSnapshotReference() throws Exception {
+        mockOrderReference();
+        mockUnprocessedEvent();
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncResult result = tradeSyncService.syncExecutionConfirmed(new ExecutionConfirmedEvent(
+                8001L,
+                5001L,
+                1001L,
+                "005930",
+                "Samsung",
+                "BUY",
+                new BigDecimal("75400"),
+                10,
+                new BigDecimal("754000"),
+                new BigDecimal("9663500"),
+                new BigDecimal("9663500"),
+                10,
+                new BigDecimal("75400"),
+                LocalDateTime.of(2026, 6, 11, 10, 1)
+        ));
+
+        assertThat(result.processStatus()).isEqualTo("SUCCESS");
+        assertThat(result.aggregateId()).isEqualTo("8001");
+        verify(notificationClient).create(eq(7L), eq("TRADE_FILLED_BUY"), anyString(), anyString(), eq("ORDER"), eq(5001L));
+    }
+
+    @Test
     void syncPortfolioUsesDefaultContestIdWhenContestIdIsNull() {
         mockUnprocessedEvent();
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
@@ -139,6 +171,22 @@ class TradeSyncServiceTest {
         doThrow(new EmptyResultDataAccessException(1))
                 .when(jdbcTemplate)
                 .queryForObject(anyString(), eq(String.class), any(Object[].class));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mockOrderReference() throws Exception {
+        when(jdbcTemplate.queryForObject(contains("from order_snapshot"), any(RowMapper.class), any(Object[].class)))
+                .thenAnswer(invocation -> {
+                    RowMapper<Object> rowMapper = invocation.getArgument(1);
+                    ResultSet resultSet = mock(ResultSet.class);
+                    when(resultSet.getLong("member_id")).thenReturn(7L);
+                    when(resultSet.getLong("contest_id")).thenReturn(3L);
+                    when(resultSet.getLong("stock_id")).thenReturn(1L);
+                    when(resultSet.getString("stock_code")).thenReturn("005930");
+                    when(resultSet.getString("stock_name")).thenReturn("Samsung");
+                    when(resultSet.getString("side")).thenReturn("BUY");
+                    return rowMapper.mapRow(resultSet, 0);
+                });
     }
 
     private OrderSyncRequest orderRequest(String status) {

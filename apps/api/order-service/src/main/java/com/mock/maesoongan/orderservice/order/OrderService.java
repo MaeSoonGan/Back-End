@@ -22,13 +22,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Locale;
-import java.util.UUID;
 
 @Service
 public class OrderService {
@@ -42,6 +42,7 @@ public class OrderService {
     private final BalanceCache balanceCache;
     private final OrderEventPublisher orderEventPublisher;
     private final Duration cancelPendingTtl;
+    private final Clock clock;
 
     public OrderService(
             OrderRepository orderRepository,
@@ -49,10 +50,21 @@ public class OrderService {
             OrderEventPublisher orderEventPublisher,
             @Value("${app.order.cancel-pending-ttl}") Duration cancelPendingTtl
     ) {
+        this(orderRepository, balanceCache, orderEventPublisher, cancelPendingTtl, Clock.system(SEOUL));
+    }
+
+    OrderService(
+            OrderRepository orderRepository,
+            BalanceCache balanceCache,
+            OrderEventPublisher orderEventPublisher,
+            Duration cancelPendingTtl,
+            Clock clock
+    ) {
         this.orderRepository = orderRepository;
         this.balanceCache = balanceCache;
         this.orderEventPublisher = orderEventPublisher;
         this.cancelPendingTtl = cancelPendingTtl;
+        this.clock = clock;
     }
 
     @Transactional
@@ -83,7 +95,7 @@ public class OrderService {
         }
 
         long orderId = orderRepository.nextOrderId();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
 
         try {
             orderRepository.insertOrder(new OrderInsertCommand(
@@ -101,18 +113,14 @@ public class OrderService {
             ));
 
             orderEventPublisher.publishOrderRequested(new OrderRequestedEvent(
-                    eventId(),
                     orderId,
-                    orderNumber(orderId),
-                    memberId,
-                    contestId,
-                    stock.stockId(),
+                    accountId(memberId),
                     stock.stockCode(),
+                    stock.stockName(),
                     side,
                     orderType,
-                    orderPrice,
+                    eventOrderPrice(orderType, orderPrice),
                     request.quantity(),
-                    reservedAmount,
                     now
             ));
         } catch (RuntimeException exception) {
@@ -130,7 +138,7 @@ public class OrderService {
         OrderRow order = orderRepository.findOrder(memberId, orderId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "주문을 찾을 수 없습니다."));
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         int updated = orderRepository.markCancelRequested(memberId, orderId, now);
         if (updated == 0) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "CANNOT_CANCEL_ORDER", "취소할 수 없는 주문입니다.");
@@ -140,16 +148,8 @@ public class OrderService {
         balanceCache.markCancelPending(memberId, order.contestId(), orderId, pendingReleaseAmount, cancelPendingTtl);
 
         orderEventPublisher.publishOrderCancelRequested(new OrderCancelRequestedEvent(
-                eventId(),
                 order.orderId(),
-                orderNumber(order.orderId()),
-                order.memberId(),
-                order.contestId(),
-                order.stockCode(),
-                order.side(),
-                order.orderPrice(),
-                order.remainingQuantity(),
-                pendingReleaseAmount,
+                accountId(order.memberId()),
                 now
         ));
 
@@ -161,7 +161,7 @@ public class OrderService {
         int resolvedPage = resolvePage(page);
         int resolvedSize = resolveSize(size);
         String normalizedStatus = normalizeOrderStatus(status);
-        LocalDate resolvedDate = date == null ? LocalDate.now(SEOUL) : date;
+        LocalDate resolvedDate = date == null ? LocalDate.now(clock) : date;
         int total = orderRepository.countOrders(memberId, contestId, normalizedStatus, resolvedDate);
 
         var items = orderRepository.findOrders(
@@ -196,7 +196,7 @@ public class OrderService {
     public TradeListResponse getTrades(long memberId, Long contestId, LocalDate from, LocalDate to, String side, Integer page, Integer size) {
         int resolvedPage = resolvePage(page);
         int resolvedSize = resolveSize(size);
-        LocalDate resolvedTo = to == null ? LocalDate.now(SEOUL) : to;
+        LocalDate resolvedTo = to == null ? LocalDate.now(clock) : to;
         LocalDate resolvedFrom = from == null ? resolvedTo.minusDays(30) : from;
         String normalizedSide = normalizeTradeSide(side);
         int total = orderRepository.countTrades(memberId, contestId, resolvedFrom, resolvedTo, normalizedSide);
@@ -274,12 +274,20 @@ public class OrderService {
         return currentPrice;
     }
 
+    private BigDecimal eventOrderPrice(String priceType, BigDecimal orderPrice) {
+        return "MARKET".equals(priceType) ? null : orderPrice;
+    }
+
+    private long accountId(long memberId) {
+        return memberId;
+    }
+
     private String normalizeStockCode(String stockCode) {
         return stockCode.trim().toUpperCase(Locale.ROOT);
     }
 
     private void validateMarketOpen() {
-        LocalTime now = LocalTime.now(SEOUL);
+        LocalTime now = LocalTime.now(clock);
         if (now.isBefore(LocalTime.of(9, 0)) || now.isAfter(LocalTime.of(15, 30))) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MARKET_CLOSED", "장 운영 시간이 아닙니다.");
         }
@@ -364,10 +372,6 @@ public class OrderService {
 
     private BusinessException badRequest(String message) {
         return new BusinessException(HttpStatus.BAD_REQUEST, "BAD_REQUEST", message);
-    }
-
-    private String eventId() {
-        return UUID.randomUUID().toString();
     }
 
     private String orderNumber(long orderId) {

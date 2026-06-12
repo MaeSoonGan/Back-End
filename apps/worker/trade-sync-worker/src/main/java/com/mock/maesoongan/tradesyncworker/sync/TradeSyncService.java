@@ -1,6 +1,7 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
@@ -13,6 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class TradeSyncService {
@@ -85,6 +87,79 @@ public class TradeSyncService {
             notifyTradeFilled(request);
         }
         return result;
+    }
+
+    public SyncResult syncExecutionConfirmed(ExecutionConfirmedEvent event) {
+        return syncTrade(toTradeSyncRequest(event));
+    }
+
+    private TradeSyncRequest toTradeSyncRequest(ExecutionConfirmedEvent event) {
+        OrderReference order = findOrderReference(event.orderId())
+                .orElseGet(() -> fallbackOrderReference(event));
+
+        return new TradeSyncRequest(
+                "execution.confirmed:" + event.executionId(),
+                event.executionId(),
+                event.orderId(),
+                order.memberId(),
+                order.contestId(),
+                order.stockId(),
+                nonBlank(order.stockCode(), event.stockCode()),
+                nonBlank(order.stockName(), event.stockName()),
+                nonBlank(order.side(), event.orderType()),
+                event.executedPrice(),
+                event.executedQuantity(),
+                event.executedAmount(),
+                event.confirmedAt()
+        );
+    }
+
+    private Optional<OrderReference> findOrderReference(Long orderId) {
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    select member_id,
+                           contest_id,
+                           stock_id,
+                           stock_code,
+                           stock_name,
+                           side
+                    from order_snapshot
+                    where order_id = ?
+                    """, (rs, rowNum) -> new OrderReference(
+                    rs.getLong("member_id"),
+                    rs.getLong("contest_id"),
+                    rs.getLong("stock_id"),
+                    rs.getString("stock_code"),
+                    rs.getString("stock_name"),
+                    rs.getString("side")
+            ), orderId));
+        } catch (EmptyResultDataAccessException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private OrderReference fallbackOrderReference(ExecutionConfirmedEvent event) {
+        StockReference stock = findStockReference(event.stockCode());
+        return new OrderReference(
+                event.accountId(),
+                0L,
+                stock.stockId(),
+                stock.stockCode(),
+                nonBlank(event.stockName(), stock.stockName()),
+                event.orderType()
+        );
+    }
+
+    private StockReference findStockReference(String stockCode) {
+        return jdbcTemplate.queryForObject("""
+                select id, code, name
+                from stock
+                where code = ?
+                """, (rs, rowNum) -> new StockReference(
+                rs.getLong("id"),
+                rs.getString("code"),
+                rs.getString("name")
+        ), stockCode);
     }
 
     private void notifyTradeFilled(TradeSyncRequest request) {
@@ -369,10 +444,27 @@ public class TradeSyncService {
         return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
     }
 
+    private String nonBlank(String preferred, String fallback) {
+        return preferred == null || preferred.isBlank() ? fallback : preferred;
+    }
+
     private String truncate(String value) {
         if (value == null || value.length() <= 500) {
             return value;
         }
         return value.substring(0, 500);
+    }
+
+    private record OrderReference(
+            Long memberId,
+            Long contestId,
+            Long stockId,
+            String stockCode,
+            String stockName,
+            String side
+    ) {
+    }
+
+    private record StockReference(Long stockId, String stockCode, String stockName) {
     }
 }

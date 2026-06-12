@@ -30,6 +30,47 @@ class TradeExecutionKafkaConsumerTest {
     }
 
     @Test
+    void consumeOnPremExecutionConfirmedParsesPayloadAndSyncsExecutionConfirmed() {
+        when(tradeSyncService.syncExecutionConfirmed(argThat(event -> event != null && event.executionId().equals(8001L))))
+                .thenReturn(new SyncResult(
+                        "execution.confirmed:8001",
+                        "TRADE_HISTORY_SYNC",
+                        "TRADE",
+                        "8001",
+                        "SUCCESS",
+                        "Sync completed",
+                        LocalDateTime.of(2026, 6, 12, 13, 1, 1)
+                ));
+
+        consumer.consumeExecutionConfirmed("""
+                {
+                  "executionId": 8001,
+                  "orderId": 990003,
+                  "accountId": 1001,
+                  "stockCode": "005930",
+                  "stockName": "Samsung",
+                  "orderType": "BUY",
+                  "executedPrice": 336500,
+                  "executedQuantity": 1,
+                  "executedAmount": 336500,
+                  "updatedDeposit": 9663500,
+                  "updatedAvailableBalance": 9663500,
+                  "holdingQuantity": 1,
+                  "holdingAveragePrice": 336500,
+                  "confirmedAt": "2026-06-12T13:01:01"
+                }
+                """);
+
+        verify(tradeSyncService).syncExecutionConfirmed(argThat(event ->
+                event.executionId().equals(8001L)
+                        && event.orderId().equals(990003L)
+                        && event.accountId().equals(1001L)
+                        && event.orderType().equals("BUY")
+                        && event.confirmedAt().equals(LocalDateTime.of(2026, 6, 12, 13, 1, 1))
+        ));
+    }
+
+    @Test
     void consumeExecutionConfirmedParsesPayloadAndSyncsTrade() {
         when(tradeSyncService.syncTrade(argThat(request -> request != null && request.tradeId().equals(9001L))))
                 .thenReturn(new SyncResult(

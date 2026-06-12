@@ -14,9 +14,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +35,10 @@ import static org.mockito.Mockito.when;
 class OrderServiceTest {
 
     private static final Duration CANCEL_PENDING_TTL = Duration.ofMinutes(5);
+    private static final Clock MARKET_OPEN_CLOCK = Clock.fixed(
+            Instant.parse("2026-06-12T01:00:00Z"),
+            ZoneId.of("Asia/Seoul")
+    );
 
     private OrderRepository orderRepository;
     private BalanceCache balanceCache;
@@ -42,7 +50,7 @@ class OrderServiceTest {
         orderRepository = mock(OrderRepository.class);
         balanceCache = mock(BalanceCache.class);
         orderEventPublisher = mock(OrderEventPublisher.class);
-        orderService = new OrderService(orderRepository, balanceCache, orderEventPublisher, CANCEL_PENDING_TTL);
+        orderService = new OrderService(orderRepository, balanceCache, orderEventPublisher, CANCEL_PENDING_TTL, MARKET_OPEN_CLOCK);
     }
 
     @Test
@@ -56,7 +64,43 @@ class OrderServiceTest {
         assertThat(response.orderId()).isEqualTo(1001L);
         assertThat(response.status()).isEqualTo("CANCEL_REQUESTED");
         verify(balanceCache).markCancelPending(7L, 0L, 1001L, new BigDecimal("226200"), CANCEL_PENDING_TTL);
-        verify(orderEventPublisher).publishOrderCancelRequested(any(OrderCancelRequestedEvent.class));
+        var eventCaptor = forClass(OrderCancelRequestedEvent.class);
+        verify(orderEventPublisher).publishOrderCancelRequested(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().orderId()).isEqualTo(1001L);
+        assertThat(eventCaptor.getValue().accountId()).isEqualTo(7L);
+        assertThat(eventCaptor.getValue().requestedAt()).isNotNull();
+    }
+
+    @Test
+    void createOrderPublishesOnPremOrderRequestEvent() {
+        CreateOrderRequest request = new CreateOrderRequest(
+                1L,
+                0L,
+                "005930",
+                "BUY",
+                "LIMIT",
+                new BigDecimal("75400"),
+                10L
+        );
+        when(orderRepository.existsActiveContestParticipation(7L, 0L)).thenReturn(true);
+        when(orderRepository.findActiveStock(1L, "005930")).thenReturn(Optional.of(
+                new OrderRepository.StockRow(1L, "005930", "\uC0BC\uC131\uC804\uC790", new BigDecimal("75400"))
+        ));
+        when(balanceCache.reserve(7L, 0L, new BigDecimal("754000"))).thenReturn(BalanceCache.ReserveResult.RESERVED);
+        when(orderRepository.nextOrderId()).thenReturn(990003L);
+
+        orderService.createOrder(7L, request);
+
+        var eventCaptor = forClass(OrderEvents.OrderRequestedEvent.class);
+        verify(orderEventPublisher).publishOrderRequested(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().orderId()).isEqualTo(990003L);
+        assertThat(eventCaptor.getValue().accountId()).isEqualTo(7L);
+        assertThat(eventCaptor.getValue().stockCode()).isEqualTo("005930");
+        assertThat(eventCaptor.getValue().stockName()).isEqualTo("\uC0BC\uC131\uC804\uC790");
+        assertThat(eventCaptor.getValue().orderType()).isEqualTo("BUY");
+        assertThat(eventCaptor.getValue().priceType()).isEqualTo("LIMIT");
+        assertThat(eventCaptor.getValue().orderPrice()).isEqualByComparingTo("75400");
+        assertThat(eventCaptor.getValue().orderQuantity()).isEqualTo(10L);
     }
 
     @Test

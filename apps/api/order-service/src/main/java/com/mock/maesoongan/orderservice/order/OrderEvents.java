@@ -9,33 +9,21 @@ public final class OrderEvents {
     }
 
     public record OrderRequestedEvent(
-            String eventId,
             long orderId,
-            String orderNumber,
-            long memberId,
-            long contestId,
-            long stockId,
+            long accountId,
             String stockCode,
-            String side,
+            String stockName,
             String orderType,
+            String priceType,
             BigDecimal orderPrice,
             long orderQuantity,
-            BigDecimal reservedAmount,
             LocalDateTime requestedAt
     ) {
     }
 
     public record OrderCancelRequestedEvent(
-            String eventId,
             long orderId,
-            String orderNumber,
-            long memberId,
-            long contestId,
-            String stockCode,
-            String side,
-            BigDecimal orderPrice,
-            long remainingQuantity,
-            BigDecimal pendingReleaseAmount,
+            long accountId,
             LocalDateTime requestedAt
     ) {
     }

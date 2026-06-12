@@ -1,7 +1,9 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.TradeSyncRequest;
 import org.slf4j.Logger;
@@ -29,7 +31,20 @@ public class TradeExecutionKafkaConsumer {
             groupId = "${spring.kafka.consumer.group-id}"
     )
     public void consumeExecutionConfirmed(String payload) {
-        TradeSyncRequest request = parse(payload);
+        JsonNode node = parseTree(payload);
+        if (isOnPremExecutionConfirmed(node)) {
+            ExecutionConfirmedEvent event = parse(node, ExecutionConfirmedEvent.class);
+            SyncResult result = tradeSyncService.syncExecutionConfirmed(event);
+            log.info(
+                    "Consumed on-prem execution.confirmed event. executionId={}, orderId={}, status={}",
+                    event.executionId(),
+                    event.orderId(),
+                    result.processStatus()
+            );
+            return;
+        }
+
+        TradeSyncRequest request = parse(node, TradeSyncRequest.class);
         SyncResult result = tradeSyncService.syncTrade(request);
         log.info(
                 "Consumed execution event. eventId={}, tradeId={}, orderId={}, status={}",
@@ -40,9 +55,21 @@ public class TradeExecutionKafkaConsumer {
         );
     }
 
-    private TradeSyncRequest parse(String payload) {
+    private JsonNode parseTree(String payload) {
         try {
-            return objectMapper.readValue(payload, TradeSyncRequest.class);
+            return objectMapper.readTree(payload);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException("Invalid execution.confirmed event payload", exception);
+        }
+    }
+
+    private boolean isOnPremExecutionConfirmed(JsonNode node) {
+        return node.hasNonNull("accountId") || node.hasNonNull("confirmedAt");
+    }
+
+    private <T> T parse(JsonNode node, Class<T> type) {
+        try {
+            return objectMapper.treeToValue(node, type);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Invalid execution.confirmed event payload", exception);
         }
