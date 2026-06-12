@@ -21,7 +21,8 @@ public final class MarketDtos {
             String status,
             String openTime,
             String closeTime,
-            String message
+            String message,
+            boolean maintenance
     ) {
     }
 

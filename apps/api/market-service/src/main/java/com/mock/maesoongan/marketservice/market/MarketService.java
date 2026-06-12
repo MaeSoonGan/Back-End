@@ -104,7 +104,8 @@ public class MarketService {
                 open ? "open" : "closed",
                 "09:00",
                 "15:30",
-                null
+                null,
+                marketDataRepository.isMaintenanceEnabled()
         );
     }
 

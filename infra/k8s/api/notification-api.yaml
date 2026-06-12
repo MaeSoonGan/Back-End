@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-api
+  namespace: app
+  annotations:
+    configmap.reloader.stakater.com/reload: maesoongan-api-config
+    secret.reloader.stakater.com/reload: notification-api-secret
+  labels:
+    app: notification-api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: notification-api
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8086"
+      labels:
+        app: notification-api
+    spec:
+      nodeSelector:
+        role: service
+      containers:
+        - name: notification-api
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/notification-api:70198ca520ba3cbbc3860b75ef5cf5eb8793e6af
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8086
+          env:
+            - name: NOTIFICATION_API_PORT
+              value: "8086"
+          envFrom:
+            - configMapRef:
+                name: maesoongan-api-config
+            - secretRef:
+                name: notification-api-secret
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8086
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8086
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-api
+  namespace: app
+  labels:
+    app: notification-api
+spec:
+  type: ClusterIP
+  selector:
+    app: notification-api
+  ports:
+    - name: http
+      port: 8086
+      targetPort: 8086
