@@ -31,6 +31,7 @@ on:
           - market-realtime-service
           - user-realtime-service
           - trade-sync-worker
+          - notification-api
 
 concurrency:
   group: build-and-push-ecr-${{ github.ref }}
@@ -60,6 +61,7 @@ jobs:
           - market-realtime-service
           - user-realtime-service
           - trade-sync-worker
+          - notification-api
 
     steps:
       - name: Skip unselected service
@@ -129,6 +131,7 @@ jobs:
             market-realtime-service
             user-realtime-service
             trade-sync-worker
+            notification-api
           )
 
           if [[ "$SELECTED_SERVICE" == "all" ]]; then
