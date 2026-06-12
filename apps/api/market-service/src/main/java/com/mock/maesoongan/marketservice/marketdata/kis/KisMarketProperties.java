@@ -15,6 +15,8 @@ public class KisMarketProperties {
     private final String dailyChartTrId;
     private final String dailyChartMarketDivCode;
     private final String dailyChartAdjustedPrice;
+    private final String inquirePricePath;
+    private final String inquirePriceTrId;
 
     public KisMarketProperties(
             @Value("${kis.app-key:}") String appKey,
@@ -25,7 +27,9 @@ public class KisMarketProperties {
             @Value("${kis.daily-chart-path:/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice}") String dailyChartPath,
             @Value("${kis.daily-chart-tr-id:FHKST03010100}") String dailyChartTrId,
             @Value("${kis.daily-chart-market-div-code:J}") String dailyChartMarketDivCode,
-            @Value("${kis.daily-chart-adjusted-price:0}") String dailyChartAdjustedPrice
+            @Value("${kis.daily-chart-adjusted-price:0}") String dailyChartAdjustedPrice,
+            @Value("${kis.inquire-price-path:/uapi/domestic-stock/v1/quotations/inquire-price}") String inquirePricePath,
+            @Value("${kis.inquire-price-tr-id:FHKST01010100}") String inquirePriceTrId
     ) {
         this.appKey = appKey;
         this.appSecret = appSecret;
@@ -36,6 +40,16 @@ public class KisMarketProperties {
         this.dailyChartTrId = dailyChartTrId;
         this.dailyChartMarketDivCode = dailyChartMarketDivCode;
         this.dailyChartAdjustedPrice = dailyChartAdjustedPrice;
+        this.inquirePricePath = inquirePricePath;
+        this.inquirePriceTrId = inquirePriceTrId;
+    }
+
+    public String inquirePricePath() {
+        return inquirePricePath;
+    }
+
+    public String inquirePriceTrId() {
+        return inquirePriceTrId;
     }
 
     public String appKey() {
