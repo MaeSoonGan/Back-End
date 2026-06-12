@@ -208,16 +208,21 @@ public class MarketDataRepository {
             args[i + 1] = markets.get(i);
         }
 
+        // 가격은 순위 스냅샷(10초 갱신·폴백 有) 우선, 순위에 없으면 stock_price_snapshot으로 폴백
         return jdbcTemplate.query("""
                 select s.code,
                        s.name,
                        s.market,
-                       coalesce(p.current_price, 0) as current_price,
-                       coalesce(p.change_amount, 0) as change_amount,
-                       coalesce(p.change_rate, 0) as change_rate
+                       case when coalesce(r.price, 0) > 0 then r.price
+                            else coalesce(p.current_price, 0) end as current_price,
+                       case when coalesce(r.price, 0) > 0 then coalesce(r.change_amount, 0)
+                            else coalesce(p.change_amount, 0) end as change_amount,
+                       case when coalesce(r.price, 0) > 0 then coalesce(r.change_rate, 0)
+                            else coalesce(p.change_rate, 0) end as change_rate
                 from watchlist w
                 join stock s on s.id = w.stock_id
                 left join stock_price_snapshot p on p.stock_code = s.code
+                left join market_ranking_snapshot r on r.stock_code = s.code and r.ranking_type = 'HTS_TOP_VIEW'
                 where w.member_id = ?
                   and s.status = 'ACTIVE'
                   and s.market in (%s)
@@ -230,6 +235,34 @@ public class MarketDataRepository {
                 rs.getBigDecimal("change_amount"),
                 rs.getBigDecimal("change_rate")
         ), args);
+    }
+
+    // 관심종목에 등록된 활성 종목 코드(중복 제거) — 가격 스냅샷 적재 대상
+    public List<String> findWatchlistedStockCodes(int limit) {
+        return jdbcTemplate.queryForList("""
+                select distinct s.code
+                from watchlist w
+                join stock s on s.id = w.stock_id
+                where s.status = 'ACTIVE'
+                order by s.code
+                limit ?
+                """, String.class, limit);
+    }
+
+    // 종목별 현재가 스냅샷 적재(읽기 모델). watchlist/잔고 등이 이 값을 last-known으로 읽음.
+    public void upsertStockPriceSnapshot(String stockCode, java.math.BigDecimal currentPrice,
+                                         java.math.BigDecimal changeAmount, java.math.BigDecimal changeRate, long volume) {
+        jdbcTemplate.update("""
+                insert into stock_price_snapshot
+                    (stock_code, current_price, change_amount, change_rate, volume, updated_at)
+                values (?, ?, ?, ?, ?, now())
+                on duplicate key update
+                    current_price = values(current_price),
+                    change_amount = values(change_amount),
+                    change_rate = values(change_rate),
+                    volume = values(volume),
+                    updated_at = values(updated_at)
+                """, stockCode, currentPrice, changeAmount, changeRate, volume);
     }
 
     public Optional<MarketIndexRow> findMarketIndex(String market) {
