@@ -31,7 +31,7 @@ spec:
         role: service
       containers:
         - name: contest-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/contest-service:da78a457be24489064ca4e32972f4bb19c91b7f9
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/contest-service:35906b21f7f4cd4dbf12fb1c8389687e870f2138
           imagePullPolicy: Always
           ports:
             - containerPort: 8082
