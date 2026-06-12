@@ -1,6 +1,8 @@
 package com.mock.maesoongan.marketservice.market;
 
 import com.mock.maesoongan.marketservice.common.BusinessException;
+import com.mock.maesoongan.marketservice.market.MarketDtos.HtsTopViewRankingItem;
+import com.mock.maesoongan.marketservice.market.MarketDtos.HtsTopViewRankingResponse;
 import com.mock.maesoongan.marketservice.market.MarketDtos.MarketIndexResponse;
 import com.mock.maesoongan.marketservice.market.MarketDtos.MarketRankingItem;
 import com.mock.maesoongan.marketservice.market.MarketDtos.MarketStatusResponse;
@@ -17,6 +19,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class MarketService {
@@ -55,6 +58,41 @@ public class MarketService {
                 row.changeRate(),
                 row.cached()
         );
+    }
+
+    // KOSPI/KOSDAQ 지수를 RDS 스냅샷(market_index_snapshot, 마지막 적재값 유지)에서 조회.
+    // 라이브 캐시가 비어도 마지막 실제값을 돌려주므로 화면에 "-"/빈값이 뜨지 않는다.
+    @Transactional(readOnly = true)
+    public List<MarketIndexResponse> getMarketIndices() {
+        return List.of("KOSPI", "KOSDAQ").stream()
+                .map(this::normalizeIndexMarket)
+                .map(marketDataRepository::findMarketIndex)
+                .flatMap(Optional::stream)
+                .map(row -> new MarketIndexResponse(
+                        row.market(),
+                        row.value(),
+                        row.change(),
+                        row.changeRate(),
+                        row.cached()
+                ))
+                .toList();
+    }
+
+    // 실시간 조회상위 순위 — RDS 스냅샷(HTS_TOP_VIEW) 조회. findMarketRankings가 stock을 조인해 종목명을 채워준다.
+    @Transactional(readOnly = true)
+    public HtsTopViewRankingResponse getHtsTopViewRanking() {
+        List<HtsTopViewRankingItem> items = marketDataRepository.findMarketRankings("HTS_TOP_VIEW").stream()
+                .map(row -> new HtsTopViewRankingItem(
+                        row.rank(),
+                        row.code(),
+                        row.name(),
+                        row.price(),
+                        row.change(),
+                        row.changeRate(),
+                        row.volume()
+                ))
+                .toList();
+        return new HtsTopViewRankingResponse(items);
     }
 
     public MarketStatusResponse getMarketStatus() {

@@ -37,6 +37,23 @@ public final class MarketDtos {
     ) {
     }
 
+    // 실시간 조회상위 순위 (FE 호환 필드명: stockName/currentPrice 등)
+    public record HtsTopViewRankingItem(
+            int rank,
+            String stockCode,
+            String stockName,
+            BigDecimal currentPrice,
+            BigDecimal changePrice,
+            BigDecimal changeRate,
+            long volume
+    ) {
+    }
+
+    public record HtsTopViewRankingResponse(
+            List<HtsTopViewRankingItem> items
+    ) {
+    }
+
     public record MarketRankingResponse(
             List<MarketRankingItem> items
     ) {

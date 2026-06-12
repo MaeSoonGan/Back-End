@@ -1,6 +1,7 @@
 package com.mock.maesoongan.marketservice.market;
 
 import com.mock.maesoongan.marketservice.common.ApiResponse;
+import com.mock.maesoongan.marketservice.market.MarketDtos.HtsTopViewRankingResponse;
 import com.mock.maesoongan.marketservice.market.MarketDtos.MarketIndexResponse;
 import com.mock.maesoongan.marketservice.market.MarketDtos.MarketRankingItem;
 import com.mock.maesoongan.marketservice.market.MarketDtos.MarketStatusResponse;
@@ -30,6 +31,12 @@ public class MarketController {
         return ApiResponse.success(marketService.getMarketIndex(market));
     }
 
+    @Operation(summary = "Get KOSPI/KOSDAQ indices (RDS snapshot, last-known)")
+    @GetMapping("/indices")
+    public ApiResponse<List<MarketIndexResponse>> getMarketIndices() {
+        return ApiResponse.success(marketService.getMarketIndices());
+    }
+
     @Operation(summary = "Get market status")
     @GetMapping("/status")
     public ApiResponse<MarketStatusResponse> getMarketStatus() {
@@ -42,5 +49,11 @@ public class MarketController {
             @RequestParam(defaultValue = "\uAC70\uB798\uB300\uAE08") String type
     ) {
         return ApiResponse.success(marketService.getMarketRanking(type));
+    }
+
+    @Operation(summary = "Get HTS top-view ranking (RDS snapshot, last-known + stock names)")
+    @GetMapping("/ranking/hts-top-view")
+    public ApiResponse<HtsTopViewRankingResponse> getHtsTopViewRanking() {
+        return ApiResponse.success(marketService.getHtsTopViewRanking());
     }
 }

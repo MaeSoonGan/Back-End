@@ -260,7 +260,10 @@ public class KisQuoteSource implements QuoteSource {
             return;
         }
         lastSubscribeOverReconnectAt = now;
-        log.warn("KIS MAX SUBSCRIBE OVER 감지 → KIS 재연결로 등록 초기화");
+        log.warn("KIS MAX SUBSCRIBE OVER 감지 → 추적 목록 초기화 + KIS 재연결");
+        // 누적/유령 등록까지 비운다. 재연결 후 핸들러가 복구완료 이벤트에서 현재 활성 구독만 다시 등록
+        // → 비우지 않으면 같은 초과 상태로 재등록되어 무한 MAX OVER 루프에 빠짐
+        clearSubscriptions();
         triggerReconnect();
     }
 

@@ -87,6 +87,19 @@ public class StockChartService {
         );
     }
 
+    // 최근 일별시세를 백필(없으면 KIS에서 받아 적재). 순위에서 현재가/종가가 없는 종목 보강용.
+    @Transactional
+    public void ensureRecentDailyPrices(String code) {
+        if (!syncEnabled) {
+            return;
+        }
+        String normalizedCode = normalizeCode(code);
+        marketDataRepository.findActiveStockId(normalizedCode).ifPresent(stockId -> {
+            LocalDate today = LocalDate.now(KST);
+            syncMissingDailyPrices(stockId, normalizedCode, today.minusDays(kisWindowDays - 1L), today);
+        });
+    }
+
     private void syncMissingDailyPrices(long stockId, String code, LocalDate from, LocalDate requestedTo) {
         LocalDate today = LocalDate.now(KST);
         LocalDate syncTo = requestedTo.isBefore(today) ? requestedTo : today.minusDays(1);
