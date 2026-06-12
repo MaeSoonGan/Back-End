@@ -165,6 +165,10 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
     // 실시간 수신 복구 시작/완료를 모든 세션에 알림 (FE 복구 모달용)
     @EventListener
     public void handleRealtimeStatus(MarketRealtimeStatusEvent event) {
+        // 복구 완료(재연결 끝) 시점에 현재 활성 구독만 다시 등록 → reset/자동복구(MAX OVER) 공통 경로
+        if (!event.recovering()) {
+            resubscribeActive();
+        }
         TextMessage message;
         try {
             message = new TextMessage(objectMapper.writeValueAsString(
@@ -183,10 +187,14 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // 페이지 이동 RESET: 소스 연결/추적 목록을 초기화한 뒤, 현재 활성 구독(실제 수요)만 다시 등록.
-    // → 재연결 후 onConnected가 이 깨끗한 목록만 KIS에 등록 = pod 재시작과 동일한 효과.
+    // 페이지 이동 RESET: 소스 연결/추적 목록을 초기화. 재구독은 복구완료(recovering=false) 이벤트에서 수행
+    // → reset/자동복구 모두 동일하게 "비우고 → 재연결 → 활성 구독만 재등록" 경로를 탄다(중복 재구독 방지).
     private void resetRealtime() {
         quoteIngestionService.resetSource();
+    }
+
+    // 재연결로 비워진 KIS 등록에 현재 활성 구독(실제 수요)만 다시 등록 = pod 재시작과 동일한 효과.
+    private void resubscribeActive() {
         List<String> prices = List.copyOf(priceSubscriberCounts.keySet());
         List<String> orderbooks = List.copyOf(orderbookSubscriberCounts.keySet());
         List<String> indexes = List.copyOf(indexSubscriberCounts.keySet());

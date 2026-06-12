@@ -21,7 +21,7 @@ import java.util.List;
 /**
  * realtime-service가 Redis에 캐시한 지수(market:index:{market})를 주기적으로 읽어
  * market_index_snapshot(읽기 모델)에 적재한다.
- * - 장중 5분마다 적재 → 마감 후 화면(REST 스냅샷)에 그날 값이 반영
+ * - 장중 30초마다 적재(realtime 캐시 TTL과 동일) → 화면(REST 스냅샷)이 거의 실시간으로 갱신
  * - 마감 후엔 캐시가 비므로(null) 갱신을 건너뛰어 마지막(종가) 적재값이 그대로 유지됨
  */
 @Component
@@ -46,8 +46,8 @@ public class MarketIndexSnapshotScheduler {
         this.realtimeBaseUrl = realtimeBaseUrl;
     }
 
-    // 평일 09:00~15:55 KST, 5분마다 (장중 주기 + 마감 시점 캡처)
-    @Scheduled(cron = "0 0/5 9-15 * * MON-FRI", zone = "Asia/Seoul")
+    // 평일 09~15시 KST, 10초마다 (realtime 갱신 주기와 동일)
+    @Scheduled(cron = "0/10 * 9-15 * * MON-FRI", zone = "Asia/Seoul")
     public void captureIndexSnapshot() {
         for (String market : MARKETS) {
             try {
