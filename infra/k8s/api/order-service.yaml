@@ -31,7 +31,7 @@ spec:
         role: service
       containers:
         - name: order-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/order-service:75d376c2cc32881a42a9d010eabfd1d8590384e1
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/order-service:da78a457be24489064ca4e32972f4bb19c91b7f9
           imagePullPolicy: Always
           ports:
             - containerPort: 8084
