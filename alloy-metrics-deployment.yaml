@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alloy-metrics
+  namespace: monitoring
+  labels:
+    app: alloy-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alloy-metrics
+  template:
+    metadata:
+      labels:
+        app: alloy-metrics
+    spec:
+      serviceAccountName: alloy
+      containers:
+        - name: alloy
+          image: grafana/alloy:latest
+          args:
+            - run
+            - /etc/alloy/config.alloy
+            - --server.http.listen-addr=0.0.0.0:12345
+          ports:
+            - name: http
+              containerPort: 12345
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alloy
+      volumes:
+        - name: config
+          configMap:
+            name: alloy-metrics-config

@@ -2,13 +2,12 @@ package com.mock.maesoongan.tradesyncworker.sync;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 public final class SyncDtos {
 
@@ -182,6 +181,37 @@ public final class SyncDtos {
             Long portfolioVersion,
 
             LocalDateTime onpremUpdatedAt
+    ) {
+    }
+
+    @Schema(description = "Member command result event from on-premise member service")
+    public record MemberCommandResultEvent(
+            @NotBlank(message = "eventType is required")
+            String eventType,
+            @NotBlank(message = "requestId is required")
+            String requestId,
+            Long memberId,
+            @NotBlank(message = "status is required")
+            String status,
+            String reason,
+            MemberCommandPayload payload,
+            LocalDateTime occurredAt
+    ) {
+        public String effectiveEventId() {
+            return eventType + ":" + requestId;
+        }
+    }
+
+    @Schema(description = "Member command result payload")
+    public record MemberCommandPayload(
+            String loginId,
+            String email,
+            String nickname,
+            String phone,
+            String status,
+            String profileImageUrl,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
     ) {
     }
 
