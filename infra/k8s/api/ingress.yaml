@@ -134,3 +134,19 @@ spec:
                 name: notification-api
                 port:
                   number: 8086
+
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-admin-service
+                port:
+                  number: 80
+
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-user-service
+                port:
+                  number: 80
