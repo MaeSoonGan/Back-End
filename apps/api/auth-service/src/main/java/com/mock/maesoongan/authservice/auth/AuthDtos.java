@@ -34,7 +34,7 @@ public final class AuthDtos {
 
     public record SendEmailCodeRequest(
             @NotBlank @Email String email,
-            @NotBlank @Pattern(regexp = "signup|find-id|reset-password|update-email") String purpose
+            @NotBlank @Pattern(regexp = "signup|find-id|reset-password") String purpose
     ) {
     }
 
@@ -52,7 +52,7 @@ public final class AuthDtos {
 
     public record RegisterRequest(
             @NotBlank @Pattern(regexp = "^[A-Za-z0-9]{5,20}$") String userId,
-            @NotBlank @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{10,}$") String password,
+            @NotBlank String password,
             @NotBlank @Email String email,
             @NotBlank @Pattern(regexp = "^.{2,10}$") String nickname,
             @NotBlank @Pattern(regexp = "^010-\\d{4}-\\d{4}$") String phone,
@@ -62,11 +62,12 @@ public final class AuthDtos {
     ) {
     }
 
-    public record RegisterResponse(String userId, String nickname, String email) {
+    public record RegisterResponse(String requestId, String userId, String nickname, String email) {
     }
 
     public record FindIdRequest(
             @NotBlank @Email String email,
+            @NotBlank @Pattern(regexp = "^010-\\d{4}-\\d{4}$") String phone,
             @NotBlank @Pattern(regexp = "^\\d{6}$") String code
     ) {
     }
@@ -87,7 +88,7 @@ public final class AuthDtos {
 
     public record ResetPasswordRequest(
             @NotBlank String resetToken,
-            @NotBlank @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{10,}$") String newPassword,
+            @NotBlank String newPassword,
             @NotBlank String newPasswordConfirm
     ) {
     }
@@ -109,14 +110,13 @@ public final class AuthDtos {
             @Pattern(regexp = "^.{2,10}$") String nickname,
             @Pattern(regexp = "^010-\\d{4}-\\d{4}$") String phone,
             @Email String email,
-            @Pattern(regexp = "^\\d{6}$") String emailCode,
             String profileImageUrl
     ) {
     }
 
     public record ChangePasswordRequest(
             @NotBlank String currentPassword,
-            @NotBlank @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{10,}$") String newPassword,
+            @NotBlank String newPassword,
             @NotBlank String newPasswordConfirm
     ) {
     }

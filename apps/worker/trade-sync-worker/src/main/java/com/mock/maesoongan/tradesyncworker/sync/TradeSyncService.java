@@ -4,6 +4,8 @@ import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberCommandPayload;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberCommandResultEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.TradeSyncRequest;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -187,6 +189,56 @@ public class TradeSyncService {
                 request.memberId() + ":" + defaultContestId(request.contestId()),
                 () -> upsertPortfolioSnapshot(request)
         );
+    }
+
+    public SyncResult syncMemberCommandResult(MemberCommandResultEvent event) {
+        String eventId = event.effectiveEventId();
+        String aggregateId = aggregateId(event);
+        if (!"SUCCESS".equalsIgnoreCase(event.status())) {
+            upsertSyncEventLog(
+                    eventId,
+                    event.eventType(),
+                    "MEMBER",
+                    aggregateId,
+                    "FAILED",
+                    truncate(event.reason()),
+                    LocalDateTime.now()
+            );
+            return new SyncResult(eventId, event.eventType(), "MEMBER", aggregateId, "FAILED", event.reason(), LocalDateTime.now());
+        }
+
+        Runnable action = switch (normalize(event.eventType())) {
+            case "SIGNUP_RESULT" -> () -> upsertMemberSnapshot(event);
+            case "MEMBER_UPDATE_RESULT" -> () -> updateMemberSnapshot(event);
+            case "MEMBER_DELETE_RESULT" -> () -> markMemberDeleted(event);
+            case "LOGIN_VERIFY_RESULT", "LOGIN_ID_FIND_RESULT", "PASSWORD_CHANGE_RESULT", "PASSWORD_RESET_RESULT" -> () -> {
+            };
+            default -> throw new IllegalArgumentException("Unsupported member command result eventType: " + event.eventType());
+        };
+
+        return processEvent(
+                eventId,
+                event.eventType(),
+                "MEMBER",
+                aggregateId,
+                action
+        );
+    }
+
+    private String aggregateId(MemberCommandResultEvent event) {
+        if (event.memberId() != null) {
+            return String.valueOf(event.memberId());
+        }
+        if (event.payload() != null && event.payload().loginId() != null && !event.payload().loginId().isBlank()) {
+            return event.payload().loginId();
+        }
+        return event.requestId();
+    }
+
+    private void requireMemberId(MemberCommandResultEvent event) {
+        if (event.memberId() == null) {
+            throw new IllegalArgumentException("memberId is required for " + event.eventType());
+        }
     }
 
     private SyncResult processEvent(
@@ -385,6 +437,105 @@ public class TradeSyncService {
         );
     }
 
+    private void upsertMemberSnapshot(MemberCommandResultEvent event) {
+        requireMemberId(event);
+        MemberCommandPayload payload = event.payload();
+        if (payload == null) {
+            throw new IllegalArgumentException("payload is required for " + event.eventType());
+        }
+        if (payload.loginId() == null || payload.loginId().isBlank()) {
+            throw new IllegalArgumentException("payload.loginId is required for " + event.eventType());
+        }
+        if (payload.email() == null || payload.email().isBlank()) {
+            throw new IllegalArgumentException("payload.email is required for " + event.eventType());
+        }
+        if (payload.nickname() == null || payload.nickname().isBlank()) {
+            throw new IllegalArgumentException("payload.nickname is required for " + event.eventType());
+        }
+        LocalDateTime createdAt = payload.createdAt() == null ? eventTime(event) : payload.createdAt();
+        LocalDateTime updatedAt = payload.updatedAt() == null ? createdAt : payload.updatedAt();
+        jdbcTemplate.update("""
+                insert into member_snapshot (
+                    member_id,
+                    login_id,
+                    email,
+                    nickname,
+                    phone,
+                    status,
+                    login_fail_count,
+                    email_verified,
+                    profile_image_url,
+                    created_at,
+                    updated_at,
+                    synced_at
+                )
+                values (?, ?, ?, ?, ?, ?, 0, true, ?, ?, ?, current_timestamp)
+                on duplicate key update
+                    login_id = values(login_id),
+                    email = values(email),
+                    nickname = values(nickname),
+                    phone = values(phone),
+                    status = values(status),
+                    email_verified = true,
+                    profile_image_url = values(profile_image_url),
+                    updated_at = values(updated_at),
+                    synced_at = current_timestamp
+                """,
+                event.memberId(),
+                payload.loginId(),
+                payload.email(),
+                payload.nickname(),
+                payload.phone(),
+                normalizeStatus(payload.status()),
+                payload.profileImageUrl(),
+                createdAt,
+                updatedAt
+        );
+    }
+
+    private void updateMemberSnapshot(MemberCommandResultEvent event) {
+        requireMemberId(event);
+        MemberCommandPayload payload = event.payload();
+        if (payload == null) {
+            throw new IllegalArgumentException("payload is required for " + event.eventType());
+        }
+        jdbcTemplate.update("""
+                update member_snapshot
+                set login_id = coalesce(?, login_id),
+                    email = coalesce(?, email),
+                    nickname = coalesce(?, nickname),
+                    phone = coalesce(?, phone),
+                    status = coalesce(?, status),
+                    profile_image_url = coalesce(?, profile_image_url),
+                    updated_at = ?,
+                    synced_at = current_timestamp
+                where member_id = ?
+                """,
+                blankToNull(payload.loginId()),
+                blankToNull(payload.email()),
+                blankToNull(payload.nickname()),
+                blankToNull(payload.phone()),
+                blankToNull(normalizeStatusOrNull(payload.status())),
+                blankToNull(payload.profileImageUrl()),
+                payload.updatedAt() == null ? eventTime(event) : payload.updatedAt(),
+                event.memberId()
+        );
+    }
+
+    private void markMemberDeleted(MemberCommandResultEvent event) {
+        requireMemberId(event);
+        jdbcTemplate.update("""
+                update member_snapshot
+                set status = 'DELETED',
+                    updated_at = ?,
+                    synced_at = current_timestamp
+                where member_id = ?
+                """,
+                eventTime(event),
+                event.memberId()
+        );
+    }
+
     private String findProcessStatus(String eventId) {
         try {
             return jdbcTemplate.queryForObject("""
@@ -446,6 +597,22 @@ public class TradeSyncService {
 
     private String nonBlank(String preferred, String fallback) {
         return preferred == null || preferred.isBlank() ? fallback : preferred;
+    }
+
+    private String normalizeStatus(String value) {
+        return value == null || value.isBlank() ? "ACTIVE" : normalize(value);
+    }
+
+    private String normalizeStatusOrNull(String value) {
+        return value == null || value.isBlank() ? null : normalize(value);
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private LocalDateTime eventTime(MemberCommandResultEvent event) {
+        return event.occurredAt() == null ? LocalDateTime.now() : event.occurredAt();
     }
 
     private String truncate(String value) {

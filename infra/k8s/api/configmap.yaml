@@ -18,8 +18,18 @@ data:
   ORDER_CANCEL_TOPIC: order.cancel
   TRADE_SYNC_KAFKA_ENABLED: "true"
   TRADE_SYNC_EXECUTION_CONFIRMED_TOPIC: execution.confirmed
+  ORDER_REQUESTED_TOPIC: order-requested
+  ORDER_CANCEL_REQUESTED_TOPIC: order-cancel-requested
+  MEMBER_COMMAND_RESULT_TOPIC: member.command.result
   KAFKA_SEND_TIMEOUT: 3s
   ORDER_CANCEL_PENDING_TTL: 30s
+  ONPREM_MEMBER_SIGNUP_PATH: /api/members/signup
+  ONPREM_MEMBER_LOGIN_PATH: /api/members/login/verify
+  ONPREM_MEMBER_LOGIN_ID_FIND_PATH: /api/members/login-id/find
+  ONPREM_MEMBER_PASSWORD_CHANGE_PATH: /api/members/password/change
+  ONPREM_MEMBER_PASSWORD_RESET_PATH: /api/members/password/reset
+  ONPREM_MEMBER_DELETE_PATH: /api/members/delete
+  ONPREM_MEMBER_UPDATE_PATH: /api/members/update
   PORTFOLIO_INITIAL_CASH: "1000000"
   SPRING_MAIL_HOST: smtp.naver.com
   SPRING_MAIL_PORT: "465"

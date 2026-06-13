@@ -23,75 +23,57 @@ import com.mock.maesoongan.authservice.auth.AuthDtos.VerifyResetResponse;
 import com.mock.maesoongan.authservice.auth.AuthDtos.WithdrawMemberRequest;
 import com.mock.maesoongan.authservice.auth.AuthDtos.WithdrawMemberResponse;
 import com.mock.maesoongan.authservice.common.BusinessException;
-import java.math.BigDecimal;
+import com.mock.maesoongan.authservice.onprem.OnPremCommandData;
+import com.mock.maesoongan.authservice.onprem.OnPremFindLoginIdRequest;
+import com.mock.maesoongan.authservice.onprem.OnPremLoginRequest;
+import com.mock.maesoongan.authservice.onprem.OnPremMemberDeleteRequest;
+import com.mock.maesoongan.authservice.onprem.OnPremMemberClient;
+import com.mock.maesoongan.authservice.onprem.OnPremMemberUpdateRequest;
+import com.mock.maesoongan.authservice.onprem.OnPremPasswordChangeRequest;
+import com.mock.maesoongan.authservice.onprem.OnPremPasswordResetRequest;
+import com.mock.maesoongan.authservice.onprem.OnPremSignupRequest;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class AuthService {
 
     private static final String EMAIL = "email";
     private static final String SIGNUP = "signup";
     private static final String FIND_ID = "find-id";
     private static final String RESET_PASSWORD = "reset-password";
-    private static final String UPDATE_EMAIL = "update-email";
-    private static final long DEFAULT_CONTEST_ID = 0L;
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm");
 
     private final JdbcTemplate jdbcTemplate;
-    private final StringRedisTemplate redisTemplate;
-    private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
     private final VerificationCodeStore verificationCodeStore;
     private final EmailCodeSender emailCodeSender;
-    private final PlatformTransactionManager transactionManager;
+    private final OnPremMemberClient onPremMemberClient;
+    private final SignupRequestIdStore signupRequestIdStore;
 
-    @Value("${app.portfolio.initial-cash:1000000}")
-    private BigDecimal initialCash;
-
-    @Transactional
     public TokenResponse login(LoginRequest request) {
-        AuthMember member = findByLoginId(request.userId())
-                .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid userId or password."));
-
-        if (member.isWithdrawn()) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "This account has been withdrawn.");
-        }
-
-        if (member.isLocked()) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "Account is locked.");
-        }
-
-        if (!passwordMatches(request.password(), member.passwordHash())) {
-            increaseLoginFailCount(member.memberId(), member.loginFailCount());
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid userId or password.");
-        }
-
-        resetLoginFailCount(member.memberId());
-        String accessToken = jwtTokenProvider.createAccessToken(member.loginId());
-        String refreshToken = jwtTokenProvider.createRefreshToken(member.loginId(), request.keepLoginValue());
-        refreshTokenStore.save(member.loginId(), refreshToken);
+        onPremMemberClient.login(new OnPremLoginRequest(
+                UUID.randomUUID().toString(),
+                request.userId(),
+                null,
+                request.password()
+        ));
+        String accessToken = jwtTokenProvider.createAccessToken(request.userId());
+        String refreshToken = jwtTokenProvider.createRefreshToken(request.userId(), request.keepLoginValue());
+        refreshTokenStore.save(request.userId(), refreshToken);
         return new TokenResponse(accessToken, refreshToken);
     }
 
@@ -126,9 +108,6 @@ public class AuthService {
         if (SIGNUP.equals(request.purpose()) && exists("select count(*) from member_snapshot where email = ?", request.email())) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
         }
-        if (UPDATE_EMAIL.equals(request.purpose()) && exists("select count(*) from member_snapshot where email = ? and status <> 'DELETED'", request.email())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
-        }
         if ((FIND_ID.equals(request.purpose()) || RESET_PASSWORD.equals(request.purpose()))
                 && !exists("select count(*) from member_snapshot where email = ? and status <> 'DELETED'", request.email())) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered.");
@@ -146,8 +125,7 @@ public class AuthService {
                 request.code(),
                 SIGNUP,
                 FIND_ID,
-                RESET_PASSWORD,
-                UPDATE_EMAIL
+                RESET_PASSWORD
         );
         if (SIGNUP.equals(purpose)) {
             verificationCodeStore.markSignupEmailVerified(request.email());
@@ -155,7 +133,6 @@ public class AuthService {
         return new VerifiedResponse(true);
     }
 
-    @Transactional
     public RegisterResponse register(RegisterRequest request) {
         validateUserId(request.userId());
         if (!verificationCodeStore.isSignupEmailVerified(request.email())) {
@@ -171,41 +148,29 @@ public class AuthService {
             throw new BusinessException(HttpStatus.CONFLICT, "Nickname is already in use.");
         }
 
-        long memberId = nextMemberId();
-        LocalDateTime now = LocalDateTime.now();
-        jdbcTemplate.update("""
-                        insert into member_snapshot
-                        (member_id, login_id, email, nickname, phone, status, login_fail_count, email_verified,
-                         profile_image_url, created_at, updated_at, synced_at)
-                        values (?, ?, ?, ?, ?, 'ACTIVE', 0, true, null, ?, null, ?)
-                        """,
-                memberId,
-                request.userId(),
+        String requestId = signupRequestIdStore.getOrIssue(request.email(), request.userId());
+        onPremMemberClient.signup(new OnPremSignupRequest(
+                requestId,
                 request.email(),
+                request.userId(),
+                request.password(),
                 request.nickname(),
-                request.phone(),
-                now,
-                now);
-        jdbcTemplate.update("""
-                        insert into dev_member_auth
-                        (member_id, password_hash, password_updated_at, login_fail_count, locked_until, created_at, updated_at)
-                        values (?, ?, ?, 0, null, ?, null)
-                        """,
-                memberId,
-                passwordEncoder.encode(request.password()),
-                now,
-                now);
-        createInitialPortfolioSnapshot(memberId, now);
-        initializeRedisAvailableBalanceAfterCommit(memberId);
+                request.phone()
+        ));
 
-        return new RegisterResponse(request.userId(), request.nickname(), request.email());
+        return new RegisterResponse(requestId, request.userId(), request.nickname(), request.email());
     }
 
     @Transactional(readOnly = true)
     public FindIdResponse findId(FindIdRequest request) {
-        AuthMember member = findByEmail(request.email())
-                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered."));
         verificationCodeStore.verify(EMAIL, request.email(), FIND_ID, request.code());
+        onPremMemberClient.findLoginId(new OnPremFindLoginIdRequest(
+                UUID.randomUUID().toString(),
+                request.email(),
+                request.phone()
+        ));
+        AuthMember member = findByEmail(request.email())
+                .orElseThrow(() -> new BusinessException(HttpStatus.ACCEPTED, "LoginId find request accepted."));
 
         return new FindIdResponse(
                 maskUserId(member.loginId()),
@@ -235,32 +200,14 @@ public class AuthService {
         String userId = jwtTokenProvider.validateResetToken(request.resetToken());
         AuthMember member = findByLoginId(userId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid reset token."));
-
-        if (passwordMatches(request.newPassword(), member.passwordHash())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "New password must be different from the old password.");
-        }
-
-        LocalDateTime changedAt = LocalDateTime.now();
-        jdbcTemplate.update("""
-                        update dev_member_auth
-                        set password_hash = ?, password_updated_at = ?, login_fail_count = 0, locked_until = null, updated_at = ?
-                        where member_id = ?
-                        """,
-                passwordEncoder.encode(request.newPassword()),
-                changedAt,
-                changedAt,
-                member.memberId());
-        jdbcTemplate.update("""
-                        update member_snapshot
-                        set login_fail_count = 0, status = 'ACTIVE', updated_at = ?, synced_at = ?
-                        where member_id = ?
-                        """,
-                changedAt,
-                changedAt,
-                member.memberId());
+        OnPremCommandData result = onPremMemberClient.resetPassword(new OnPremPasswordResetRequest(
+                UUID.randomUUID().toString(),
+                member.email(),
+                request.newPassword()
+        ));
         refreshTokenStore.revokeAll(member.loginId());
 
-        return new ResetPasswordResponse(maskUserId(member.loginId()), changedAt.format(DATE_TIME_FORMAT));
+        return new ResetPasswordResponse(maskUserId(member.loginId()), formatProcessedAt(result));
     }
 
     @Transactional(readOnly = true)
@@ -282,8 +229,16 @@ public class AuthService {
         MemberProfile profile = findActiveProfileByLoginId(currentUserId(authorizationHeader));
         String nextNickname = resolveNickname(profile, request.nickname());
         String nextPhone = resolvePhone(profile, request.phone());
-        String nextEmail = resolveEmail(profile, request.email(), request.emailCode());
+        String nextEmail = resolveEmail(profile, request.email());
         String nextProfileImageUrl = resolveProfileImageUrl(profile, request.profileImageUrl());
+        if ((request.nickname() != null && !request.nickname().isBlank()) || (request.phone() != null && !request.phone().isBlank())) {
+            onPremMemberClient.updateMember(new OnPremMemberUpdateRequest(
+                    UUID.randomUUID().toString(),
+                    profile.memberId(),
+                    request.nickname(),
+                    request.phone()
+            ));
+        }
         boolean emailChanged = !profile.email().equals(nextEmail);
         LocalDateTime now = LocalDateTime.now();
 
@@ -327,34 +282,15 @@ public class AuthService {
         }
 
         MemberProfile profile = findActiveProfileByLoginId(currentUserId(authorizationHeader));
-        if (!passwordMatches(request.currentPassword(), profile.passwordHash())) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Current password does not match.");
-        }
-        if (passwordMatches(request.newPassword(), profile.passwordHash())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "New password must be different from the old password.");
-        }
-
-        LocalDateTime changedAt = LocalDateTime.now();
-        jdbcTemplate.update("""
-                        update dev_member_auth
-                        set password_hash = ?, password_updated_at = ?, login_fail_count = 0, locked_until = null, updated_at = ?
-                        where member_id = ?
-                        """,
-                passwordEncoder.encode(request.newPassword()),
-                changedAt,
-                changedAt,
-                profile.memberId());
-        jdbcTemplate.update("""
-                        update member_snapshot
-                        set login_fail_count = 0, updated_at = ?, synced_at = ?
-                        where member_id = ? and status = 'ACTIVE'
-                        """,
-                changedAt,
-                changedAt,
-                profile.memberId());
+        OnPremCommandData result = onPremMemberClient.changePassword(new OnPremPasswordChangeRequest(
+                UUID.randomUUID().toString(),
+                profile.memberId(),
+                request.currentPassword(),
+                request.newPassword()
+        ));
         refreshTokenStore.revokeAll(profile.loginId());
 
-        return new ChangePasswordResponse(changedAt.format(DATE_TIME_FORMAT));
+        return new ChangePasswordResponse(formatProcessedAt(result));
     }
 
     @Transactional
@@ -364,32 +300,21 @@ public class AuthService {
         }
 
         MemberProfile profile = findActiveProfileByLoginId(currentUserId(authorizationHeader));
-        if (!passwordMatches(request.password(), profile.passwordHash())) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Password does not match.");
-        }
-
-        LocalDateTime withdrawnAt = LocalDateTime.now();
-        jdbcTemplate.update("""
-                        update member_snapshot
-                        set status = 'DELETED',
-                            updated_at = ?,
-                            synced_at = ?
-                        where member_id = ? and status = 'ACTIVE'
-                        """,
-                withdrawnAt,
-                withdrawnAt,
-                profile.memberId());
+        OnPremCommandData result = onPremMemberClient.deleteMember(new OnPremMemberDeleteRequest(
+                UUID.randomUUID().toString(),
+                profile.memberId(),
+                request.password()
+        ));
         refreshTokenStore.revokeAll(profile.loginId());
 
-        return new WithdrawMemberResponse(withdrawnAt.format(DATE_TIME_FORMAT));
+        return new WithdrawMemberResponse(formatProcessedAt(result));
     }
 
     private Optional<AuthMember> findByLoginId(String loginId) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
-                       ms.created_at, dma.password_hash, dma.locked_until
+                       ms.created_at
                 from member_snapshot ms
-                join dev_member_auth dma on dma.member_id = ms.member_id
                 where ms.login_id = ?
                 """, loginId);
     }
@@ -397,9 +322,8 @@ public class AuthService {
     private Optional<AuthMember> findByEmail(String email) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
-                       ms.created_at, dma.password_hash, dma.locked_until
+                       ms.created_at
                 from member_snapshot ms
-                join dev_member_auth dma on dma.member_id = ms.member_id
                 where ms.email = ?
                 """, email);
     }
@@ -407,9 +331,8 @@ public class AuthService {
     private Optional<AuthMember> findByLoginIdAndNicknameAndEmail(String loginId, String nickname, String email) {
         return findOne("""
                 select ms.member_id, ms.login_id, ms.email, ms.nickname, ms.status, ms.login_fail_count,
-                       ms.created_at, dma.password_hash, dma.locked_until
+                       ms.created_at
                 from member_snapshot ms
-                join dev_member_auth dma on dma.member_id = ms.member_id
                 where ms.login_id = ? and ms.nickname = ? and ms.email = ?
                 """, loginId, nickname, email);
     }
@@ -423,9 +346,7 @@ public class AuthService {
                     rs.getString("nickname"),
                     rs.getString("status"),
                     rs.getInt("login_fail_count"),
-                    toLocalDateTime(rs.getTimestamp("created_at")),
-                    rs.getString("password_hash"),
-                    toLocalDateTime(rs.getTimestamp("locked_until"))
+                    toLocalDateTime(rs.getTimestamp("created_at"))
             ), args));
         } catch (EmptyResultDataAccessException e) {
             return Optional.empty();
@@ -441,10 +362,8 @@ public class AuthService {
                            ms.nickname,
                            ms.phone,
                            ms.email_verified,
-                           ms.profile_image_url,
-                           dma.password_hash
+                           ms.profile_image_url
                     from member_snapshot ms
-                    join dev_member_auth dma on dma.member_id = ms.member_id
                     where ms.login_id = ? and ms.status = 'ACTIVE'
                     """, (rs, rowNum) -> new MemberProfile(
                     rs.getLong("member_id"),
@@ -453,8 +372,7 @@ public class AuthService {
                     rs.getString("nickname"),
                     rs.getString("phone"),
                     rs.getBoolean("email_verified"),
-                    rs.getString("profile_image_url"),
-                    rs.getString("password_hash")
+                    rs.getString("profile_image_url")
             ), loginId);
         } catch (EmptyResultDataAccessException exception) {
             throw new BusinessException(HttpStatus.UNAUTHORIZED, "Invalid access token.");
@@ -462,10 +380,17 @@ public class AuthService {
     }
 
     private String currentUserId(String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Authorization bearer token is required.");
+        if (authorizationHeader == null || authorizationHeader.isBlank()) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Authorization token is required.");
         }
-        return jwtTokenProvider.validateAccessToken(authorizationHeader.substring("Bearer ".length()).trim());
+        String token = authorizationHeader.trim();
+        if (token.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length())) {
+            token = token.substring("Bearer ".length()).trim();
+        }
+        if (token.isBlank()) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "Authorization token is required.");
+        }
+        return jwtTokenProvider.validateAccessToken(token);
     }
 
     private MemberProfileResponse toProfileResponse(MemberProfile profile) {
@@ -505,7 +430,7 @@ public class AuthService {
         return normalized;
     }
 
-    private String resolveEmail(MemberProfile profile, String email, String code) {
+    private String resolveEmail(MemberProfile profile, String email) {
         if (email == null) {
             return profile.email();
         }
@@ -516,13 +441,9 @@ public class AuthService {
         if (normalized.equals(profile.email())) {
             return profile.email();
         }
-        if (code == null || code.isBlank()) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "Email verification code is required.");
-        }
         if (exists("select count(*) from member_snapshot where email = ? and member_id <> ? and status <> 'DELETED'", normalized, profile.memberId())) {
             throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
         }
-        verificationCodeStore.verify(EMAIL, normalized, UPDATE_EMAIL, code);
         return normalized;
     }
 
@@ -534,102 +455,9 @@ public class AuthService {
         return normalized.isBlank() ? null : normalized;
     }
 
-    private boolean passwordMatches(String rawPassword, String storedPassword) {
-        if (storedPassword != null && storedPassword.startsWith("{noop}")) {
-            return rawPassword.equals(storedPassword.substring("{noop}".length()));
-        }
-        return storedPassword != null && passwordEncoder.matches(rawPassword, storedPassword);
-    }
-
-    private void increaseLoginFailCount(long memberId, int currentFailCount) {
-        int nextFailCount = currentFailCount + 1;
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime lockedUntil = nextFailCount >= 5 ? now.plusMinutes(30) : null;
-        String status = nextFailCount >= 5 ? "SUSPENDED" : "ACTIVE";
-
-        // login()이 @Transactional이고 실패 시 예외를 던져 롤백되므로,
-        // 실패 카운트 증가는 별도 트랜잭션(REQUIRES_NEW)으로 커밋해 보존한다.
-        TransactionTemplate newTx = new TransactionTemplate(transactionManager);
-        newTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        newTx.executeWithoutResult(ignored -> {
-            jdbcTemplate.update("""
-                            update dev_member_auth
-                            set login_fail_count = ?, locked_until = ?, updated_at = ?
-                            where member_id = ?
-                            """,
-                    nextFailCount,
-                    lockedUntil,
-                    now,
-                    memberId);
-            jdbcTemplate.update("""
-                            update member_snapshot
-                            set login_fail_count = ?, status = ?, updated_at = ?, synced_at = ?
-                            where member_id = ?
-                            """,
-                    nextFailCount,
-                    status,
-                    now,
-                    now,
-                    memberId);
-        });
-    }
-
-    private void resetLoginFailCount(long memberId) {
-        LocalDateTime now = LocalDateTime.now();
-        jdbcTemplate.update("""
-                        update dev_member_auth
-                        set login_fail_count = 0, locked_until = null, updated_at = ?
-                        where member_id = ?
-                        """, now, memberId);
-        jdbcTemplate.update("""
-                        update member_snapshot
-                        set login_fail_count = 0, updated_at = ?, synced_at = ?
-                        where member_id = ?
-                        """, now, now, memberId);
-    }
-
     private boolean exists(String sql, Object... args) {
         Long count = jdbcTemplate.queryForObject(sql, Long.class, args);
         return count != null && count > 0;
-    }
-
-    private long nextMemberId() {
-        Long value = jdbcTemplate.queryForObject("select coalesce(max(member_id), 0) + 1 from member_snapshot", Long.class);
-        return value == null ? 1 : value;
-    }
-
-    private void createInitialPortfolioSnapshot(long memberId, LocalDateTime now) {
-        BigDecimal cash = initialCash == null ? BigDecimal.ZERO : initialCash;
-        jdbcTemplate.update("""
-                        insert into portfolio_snapshot
-                        (member_id, contest_id, cash_balance, available_cash, stock_evaluation_amount,
-                         total_asset, profit_amount, profit_rate, holdings_json, portfolio_version, synced_at)
-                        values (?, ?, ?, ?, 0, ?, 0, 0, '[]', 1, ?)
-                        """,
-                memberId,
-                DEFAULT_CONTEST_ID,
-                cash,
-                cash,
-                cash,
-                now);
-    }
-
-    private void initializeRedisAvailableBalanceAfterCommit(long memberId) {
-        BigDecimal cash = initialCash == null ? BigDecimal.ZERO : initialCash;
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                try {
-                    redisTemplate.opsForValue().set(balanceKey(memberId, DEFAULT_CONTEST_ID), cash.toPlainString());
-                } catch (Exception exception) {
-                    log.warn("Failed to initialize Redis available balance. memberId={}", memberId, exception);
-                }
-            }
-        });
-    }
-
-    private String balanceKey(long memberId, long contestId) {
-        return "balance:" + memberId + ":" + contestId;
     }
 
     private void validateUserId(String userId) {
@@ -660,6 +488,11 @@ public class AuthService {
         return timestamp == null ? null : timestamp.toLocalDateTime();
     }
 
+    private String formatProcessedAt(OnPremCommandData result) {
+        LocalDateTime processedAt = result.processedAt() == null ? LocalDateTime.now() : result.processedAt();
+        return processedAt.format(DATE_TIME_FORMAT);
+    }
+
     private record AuthMember(
             long memberId,
             String loginId,
@@ -667,17 +500,8 @@ public class AuthService {
             String nickname,
             String status,
             int loginFailCount,
-            LocalDateTime createdAt,
-            String passwordHash,
-            LocalDateTime lockedUntil
+            LocalDateTime createdAt
     ) {
-        boolean isLocked() {
-            return "SUSPENDED".equals(status) || (lockedUntil != null && lockedUntil.isAfter(LocalDateTime.now()));
-        }
-
-        boolean isWithdrawn() {
-            return "DELETED".equals(status);
-        }
     }
 
     private record MemberProfile(
@@ -687,8 +511,7 @@ public class AuthService {
             String nickname,
             String phone,
             boolean emailVerified,
-            String profileImageUrl,
-            String passwordHash
+            String profileImageUrl
     ) {
     }
 }

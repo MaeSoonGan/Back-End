@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-metrics-config
+  namespace: monitoring
+data:
+  config.alloy: |
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+
+    discovery.relabel "spring_boot_pods" {
+      targets = discovery.kubernetes.pods.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+        regex         = "true"
+        action        = "keep"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+        target_label  = "__metrics_path__"
+        regex         = "(.+)"
+        replacement   = "$1"
+      }
+
+      rule {
+        source_labels = [
+          "__meta_kubernetes_pod_ip",
+          "__meta_kubernetes_pod_annotation_prometheus_io_port",
+        ]
+        separator     = ";"
+        regex         = "(.+);(.+)"
+        target_label  = "__address__"
+        replacement   = "$1:$2"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label  = "namespace"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label  = "pod"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app"]
+        target_label  = "app"
+      }
+    }
+
+    prometheus.scrape "spring_boot_pods" {
+      targets    = discovery.relabel.spring_boot_pods.output
+      forward_to = [prometheus.remote_write.onprem.receiver]
+    }
+
+    discovery.kubernetes "endpoints" {
+      role = "endpoints"
+    }
+
+    discovery.relabel "node_exporter" {
+      targets = discovery.kubernetes.endpoints.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        regex         = "monitoring"
+        action        = "keep"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_service_name"]
+        regex         = "node-exporter"
+        action        = "keep"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_endpoint_port_name"]
+        regex         = "metrics"
+        action        = "keep"
+      }
+
+      rule {
+        source_labels = ["__meta_kubernetes_pod_node_name"]
+        target_label  = "node"
+      }
+    }
+
+    prometheus.scrape "node_exporter" {
+      targets    = discovery.relabel.node_exporter.output
+      forward_to = [prometheus.remote_write.onprem.receiver]
+    }
+
+    prometheus.remote_write "onprem" {
+      endpoint {
+        url = "http://10.6.10.22:9090/api/v1/write"
+      }
+    }
