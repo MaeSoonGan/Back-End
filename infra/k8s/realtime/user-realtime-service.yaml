@@ -31,7 +31,7 @@ spec:
         role: realtime
       containers:
         - name: user-realtime-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/user-realtime-service:4b9c6cec2300192e47576165df3a7df1871c220b
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/user-realtime-service:1b723dc7d8822c28d69831d2af1c42287ef78f73
           imagePullPolicy: Always
           ports:
             - containerPort: 8087
