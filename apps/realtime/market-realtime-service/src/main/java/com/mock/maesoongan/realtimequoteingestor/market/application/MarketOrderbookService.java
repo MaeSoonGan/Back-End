@@ -2,6 +2,7 @@ package com.mock.maesoongan.realtimequoteingestor.market.application;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mock.maesoongan.realtimequoteingestor.common.BusinessException;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisOrderbookClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
@@ -10,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -45,6 +47,16 @@ public class MarketOrderbookService {
         this.kisOrderbookClient = kisOrderbookClient;
         this.stockNameResolver = stockNameResolver;
         this.quoteTtl = Duration.ofSeconds(quoteTtlSeconds);
+    }
+
+    // 단일 종목 호가 조회(REST). 현재가 getPrice와 동일하게 없으면 404.
+    public MarketOrderbookResponse getOrderbook(String stockCode) {
+        return findOrderbook(stockCode)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        "ORDERBOOK_NOT_FOUND",
+                        "호가 데이터가 존재하지 않는 종목코드입니다: " + stockCode
+                ));
     }
 
     public Optional<MarketOrderbookResponse> findOrderbook(String stockCode) {
