@@ -1,6 +1,7 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.AccountEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
@@ -149,6 +150,47 @@ class TradeSyncServiceTest {
         assertThat(result.eventType()).isEqualTo("PORTFOLIO_SNAPSHOT_SYNC");
         assertThat(result.aggregateType()).isEqualTo("PORTFOLIO");
         assertThat(result.aggregateId()).isEqualTo("7:0");
+    }
+
+    @Test
+    void syncAccountEventUpsertsInitialPortfolioSnapshot() {
+        mockUnprocessedEvent();
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncResult result = tradeSyncService.syncAccountEvent(new AccountEvent(
+                "CONTEST_ACCOUNT_CREATED",
+                "request-1",
+                "SUCCESS",
+                7L,
+                "testtest",
+                3L,
+                1001L,
+                new BigDecimal("10000000"),
+                new BigDecimal("10000000"),
+                LocalDateTime.of(2026, 6, 14, 16, 1)
+        ));
+
+        assertThat(result.processStatus()).isEqualTo("SUCCESS");
+        assertThat(result.eventId()).isEqualTo("CONTEST_ACCOUNT_CREATED:request-1");
+        assertThat(result.eventType()).isEqualTo("CONTEST_ACCOUNT_CREATED");
+        assertThat(result.aggregateType()).isEqualTo("ACCOUNT");
+        assertThat(result.aggregateId()).isEqualTo("1001");
+        verify(jdbcTemplate).update(
+                contains("insert into portfolio_snapshot"),
+                eq(7L),
+                eq(3L),
+                eq(new BigDecimal("10000000")),
+                eq(new BigDecimal("10000000")),
+                eq(BigDecimal.ZERO),
+                eq(new BigDecimal("10000000")),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq("[]"),
+                eq(1L),
+                eq(LocalDateTime.of(2026, 6, 14, 16, 1))
+        );
     }
 
     @Test

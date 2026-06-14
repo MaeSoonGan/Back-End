@@ -215,6 +215,32 @@ public final class SyncDtos {
     ) {
     }
 
+    @Schema(description = "Account event from on-premise ledger service")
+    public record AccountEvent(
+            @NotBlank(message = "eventType is required")
+            String eventType,
+            @NotBlank(message = "requestId is required")
+            String requestId,
+            @NotBlank(message = "status is required")
+            String status,
+            @NotNull(message = "memberId is required")
+            Long memberId,
+            String userId,
+            @NotNull(message = "contestId is required")
+            Long contestId,
+            @NotNull(message = "accountId is required")
+            Long accountId,
+            @NotNull(message = "initialCash is required")
+            BigDecimal initialCash,
+            @NotNull(message = "availableCash is required")
+            BigDecimal availableCash,
+            LocalDateTime createdAt
+    ) {
+        public String effectiveEventId() {
+            return eventType + ":" + requestId;
+        }
+    }
+
     @Schema(description = "Sync processing result")
     public record SyncResult(
             String eventId,
