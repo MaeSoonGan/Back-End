@@ -198,6 +198,7 @@ public class AdminSystemService {
         String message = cleanReason(request == null ? null : request.message(), enabled ? "System maintenance is enabled." : "System is operating normally.");
         LocalDateTime now = LocalDateTime.now();
         MaintenanceRow existing = findMaintenance();
+        boolean wasEnabled = existing != null && ("ENABLED".equals(existing.status()) || existing.isMaintenance());
 
         if (existing == null) {
             jdbcTemplate.update("""
@@ -227,6 +228,21 @@ public class AdminSystemService {
         }
 
         insertAudit(currentAdminId(), enabled ? "ENABLE_MAINTENANCE" : "DISABLE_MAINTENANCE", "SYSTEM", 0, message);
+
+        // 점검 모드를 새로 켤 때(OFF→ON)만 전체 활성 회원에게 알림 발송(중복 토글 스팸 방지). best-effort.
+        if (enabled && !wasEnabled) {
+            try {
+                jdbcTemplate.update("""
+                        insert into notification
+                            (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
+                        select m.member_id, 'MAINTENANCE', '서비스 점검 안내', ?, 0, null, null, 'CREATED', 0, now()
+                        from member_snapshot m
+                        where m.status = 'ACTIVE'
+                        """, message);
+            } catch (RuntimeException ignored) {
+                // 알림 실패가 점검 모드 전환을 막지 않도록 무시
+            }
+        }
         return new MaintenanceResponse(enabled ? "ON" : "OFF", enabled, message, now);
     }
 
@@ -502,11 +518,12 @@ public class AdminSystemService {
     }
 
     private long activeUserCount() {
+        // 현재 접속자 = 최근 60초 내 하트비트(online_member.last_seen_at)를 보낸 로그인 사용자 수.
+        // FE가 로그인 상태에서 주기 핑(POST /api/portfolio/heartbeat) → order-service가 upsert.
         return count("""
-                select count(distinct member_id)
-                from auth_token
-                where member_id is not null and revoked = false and expires_at > ?
-                """, LocalDateTime.now());
+                select count(*) from online_member
+                where last_seen_at > (now() - interval 60 second)
+                """);
     }
 
     private long abnormalAlertCount() {
@@ -635,7 +652,7 @@ public class AdminSystemService {
         jdbcTemplate.update("""
                 insert into audit_log (admin_id, action, target_type, target_id, reason, result, created_at)
                 values (?, ?, ?, ?, ?, 'SUCCESS', ?)
-                """, adminId, action, targetType, targetId, reason, LocalDateTime.now());
+                """, adminId, action, targetType, targetId, reason, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
     }
 
     private long count(String sql, Object... args) {

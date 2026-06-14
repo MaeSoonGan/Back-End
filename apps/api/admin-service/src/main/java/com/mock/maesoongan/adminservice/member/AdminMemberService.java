@@ -303,16 +303,17 @@ public class AdminMemberService {
                 continue;
             }
 
+            LocalDateTime suspendedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
             jdbcTemplate.update("""
                     update member_snapshot
                     set status = 'SUSPENDED', updated_at = ?
                     where member_id = ?
-                    """, LocalDateTime.now(), memberId);
+                    """, suspendedAt, memberId);
 
             jdbcTemplate.update("""
                     insert into account_suspension (member_id, admin_id, reason, status, created_at)
                     values (?, ?, ?, 'SUSPENDED', ?)
-                    """, memberId, adminId, request.reason(), LocalDateTime.now());
+                    """, memberId, adminId, request.reason(), suspendedAt);
 
             suspendedIds.add(memberId);
         }
@@ -439,7 +440,7 @@ public class AdminMemberService {
         }
 
         long adminId = currentAdminId();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
         jdbcTemplate.update("""
                 update account_suspension
                 set status = 'RELEASED',
@@ -509,6 +510,15 @@ public class AdminMemberService {
                   and created_at >= ? and created_at < ?
                 """, today.atStartOfDay(), today.plusDays(1).atStartOfDay());
 
+        LocalDateTime monthStart = today.withDayOfMonth(1).atStartOfDay();
+        LocalDateTime monthEnd = today.withDayOfMonth(1).plusMonths(1).atStartOfDay();
+        BigDecimal monthAmount = sum("""
+                select coalesce(sum(amount), 0)
+                from seed_history
+                where request_status <> 'FAILED'
+                  and created_at >= ? and created_at < ?
+                """, monthStart, monthEnd);
+
         return new SeedPaymentSummaryResponse(
                 totalAmount,
                 todayAmount,
@@ -518,7 +528,14 @@ public class AdminMemberService {
                         from seed_history
                         where request_status <> 'FAILED'
                           and created_at >= ? and created_at < ?
-                        """, today.atStartOfDay(), today.plusDays(1).atStartOfDay())
+                        """, today.atStartOfDay(), today.plusDays(1).atStartOfDay()),
+                monthAmount,
+                count("""
+                        select count(*)
+                        from seed_history
+                        where request_status <> 'FAILED'
+                          and created_at >= ? and created_at < ?
+                        """, monthStart, monthEnd)
         );
     }
 
@@ -548,9 +565,26 @@ public class AdminMemberService {
             jdbcTemplate.update("""
                     insert into seed_history (member_id, admin_id, contest_id, amount, reason, request_status, created_at, processed_at)
                     values (?, ?, ?, ?, ?, 'SUCCESS', ?, ?)
-                    """, memberId, adminId, contestId, request.amount(), request.reason(), LocalDateTime.now(), LocalDateTime.now());
+                    """, memberId, adminId, contestId, request.amount(), request.reason(),
+                    LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")), LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
 
             insertAudit(adminId, "PAY_SEED_MONEY", "MEMBER", memberId, request.reason());
+
+            // 지급받은 회원에게 알림(설정 토글과 무관하게 항상 발송). best-effort.
+            try {
+                String body = String.format(
+                        "시드머니 %,d원이 지급되었습니다. (사유: %s)",
+                        request.amount().longValue(),
+                        request.reason() == null ? "" : request.reason());
+                jdbcTemplate.update("""
+                        insert into notification
+                            (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
+                        values (?, 'SEED_PAYMENT', '시드머니 지급', ?, 0, null, null, 'CREATED', 0, now())
+                        """, memberId, body);
+            } catch (RuntimeException ignored) {
+                // 알림 실패가 지급 처리를 막지 않도록 무시
+            }
+
             succeededIds.add(memberId);
         }
 
@@ -989,7 +1023,7 @@ public class AdminMemberService {
         jdbcTemplate.update("""
                 insert into audit_log (admin_id, action, target_type, target_id, reason, result, created_at)
                 values (?, ?, ?, ?, ?, 'SUCCESS', ?)
-                """, adminId, action, targetType, targetId, reason, LocalDateTime.now());
+                """, adminId, action, targetType, targetId, reason, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
     }
 
     private long count(String sql, Object... args) {
