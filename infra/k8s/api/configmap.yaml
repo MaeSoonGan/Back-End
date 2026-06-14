@@ -14,6 +14,7 @@ data:
   SPRING_DATA_REDIS_TIMEOUT: 3s
   REDIS_SSL_VERIFY_PEER: "true"
   KAFKA_BOOTSTRAP_SERVERS: kafka.internal.maesoongan.xyz:9092
+  CONTEST_EVENT_TOPIC: contest.event
   ORDER_REQUEST_TOPIC: order.request
   ORDER_CANCEL_TOPIC: order.cancel
   TRADE_SYNC_KAFKA_ENABLED: "true"
@@ -30,7 +31,7 @@ data:
   ONPREM_MEMBER_PASSWORD_RESET_PATH: /api/members/password/reset
   ONPREM_MEMBER_DELETE_PATH: /api/members/delete
   ONPREM_MEMBER_UPDATE_PATH: /api/members/update
-  PORTFOLIO_INITIAL_CASH: "1000000"
+  PORTFOLIO_INITIAL_CASH: "10000000"
   SPRING_MAIL_HOST: smtp.naver.com
   SPRING_MAIL_PORT: "465"
   SPRING_MAIL_SMTP_AUTH: "true"
