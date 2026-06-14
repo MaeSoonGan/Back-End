@@ -502,11 +502,12 @@ public class AdminSystemService {
     }
 
     private long activeUserCount() {
+        // 현재 접속자 = 최근 60초 내 하트비트(online_member.last_seen_at)를 보낸 로그인 사용자 수.
+        // FE가 로그인 상태에서 주기 핑(POST /api/portfolio/heartbeat) → order-service가 upsert.
         return count("""
-                select count(distinct member_id)
-                from auth_token
-                where member_id is not null and revoked = false and expires_at > ?
-                """, LocalDateTime.now());
+                select count(*) from online_member
+                where last_seen_at > (now() - interval 60 second)
+                """);
     }
 
     private long abnormalAlertCount() {
@@ -635,7 +636,7 @@ public class AdminSystemService {
         jdbcTemplate.update("""
                 insert into audit_log (admin_id, action, target_type, target_id, reason, result, created_at)
                 values (?, ?, ?, ?, ?, 'SUCCESS', ?)
-                """, adminId, action, targetType, targetId, reason, LocalDateTime.now());
+                """, adminId, action, targetType, targetId, reason, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
     }
 
     private long count(String sql, Object... args) {

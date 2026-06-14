@@ -153,7 +153,9 @@ public final class AdminMemberDtos {
             BigDecimal totalPaymentAmount,
             BigDecimal todayPaymentAmount,
             long totalPaymentCount,
-            long todayPaymentCount
+            long todayPaymentCount,
+            BigDecimal monthPaymentAmount,
+            long monthPaymentCount
     ) {
     }
 

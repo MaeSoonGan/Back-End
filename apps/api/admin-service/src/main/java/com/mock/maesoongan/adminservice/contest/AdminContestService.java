@@ -454,6 +454,8 @@ public class AdminContestService {
                                (select count(*) from contest_participation where contest_id = ? and status = 'ACTIVE') as participant_count,
                                count(case when r.is_excluded = false then 1 end) as ranked_count,
                                count(case when r.is_excluded = true then 1 end) as excluded_count,
+                               count(case when r.is_excluded = false and r.profit_rate > 0 then 1 end) as profit_count,
+                               count(case when r.is_excluded = false and r.profit_rate < 0 then 1 end) as loss_count,
                                coalesce(avg(case when r.is_excluded = false then r.profit_rate end), 0) as average_profit_rate,
                                coalesce(max(case when r.is_excluded = false then r.profit_rate end), 0) as highest_profit_rate,
                                coalesce(min(case when r.is_excluded = false then r.profit_rate end), 0) as lowest_profit_rate,
@@ -467,6 +469,8 @@ public class AdminContestService {
                         rs.getLong("participant_count"),
                         rs.getLong("ranked_count"),
                         rs.getLong("excluded_count"),
+                        rs.getLong("profit_count"),
+                        rs.getLong("loss_count"),
                         rs.getBigDecimal("average_profit_rate"),
                         rs.getBigDecimal("highest_profit_rate"),
                         rs.getBigDecimal("lowest_profit_rate"),
@@ -712,7 +716,7 @@ public class AdminContestService {
         jdbcTemplate.update("""
                 insert into audit_log (admin_id, action, target_type, target_id, reason, result, created_at)
                 values (?, ?, ?, ?, ?, 'SUCCESS', ?)
-                """, adminId, action, targetType, targetId, reason, LocalDateTime.now());
+                """, adminId, action, targetType, targetId, reason, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
     }
 
     private long count(String sql, Object... args) {

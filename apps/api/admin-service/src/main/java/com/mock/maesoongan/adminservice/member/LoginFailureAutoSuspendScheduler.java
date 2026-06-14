@@ -71,7 +71,7 @@ public class LoginFailureAutoSuspendScheduler {
     }
 
     private void suspendMember(long memberId, long adminId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
 
         // 정지 원장: 활성 기록이 없을 때만 추가
         Long active = jdbcTemplate.queryForObject(
@@ -112,7 +112,7 @@ public class LoginFailureAutoSuspendScheduler {
         jdbcTemplate.update("""
                 insert into audit_log (admin_id, action, target_type, target_id, reason, result, created_at)
                 values (?, 'AUTO_SUSPEND_LOGIN_FAIL', 'MEMBER', ?, ?, 'SUCCESS', ?)
-                """, adminId, memberId, AUTO_REASON, now);
+                """, adminId, memberId, AUTO_REASON, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
     }
 
     private long systemAdminId() {
