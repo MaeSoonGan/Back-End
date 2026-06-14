@@ -290,7 +290,7 @@ public class OrderService {
 
     private void validateMarketOpen() {
         LocalTime now = LocalTime.now(clock);
-        if (now.isBefore(LocalTime.of(9, 0)) || now.isAfter(LocalTime.of(15, 30))) {
+        if (now.isBefore(LocalTime.of(9, 0))) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MARKET_CLOSED", "장 운영 시간이 아닙니다.");
         }
     }
