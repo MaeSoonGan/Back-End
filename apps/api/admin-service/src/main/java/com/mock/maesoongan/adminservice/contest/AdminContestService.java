@@ -13,6 +13,7 @@ import com.mock.maesoongan.adminservice.contest.AdminContestDtos.RankingExcludeR
 import com.mock.maesoongan.adminservice.contest.AdminContestDtos.RankingItem;
 import com.mock.maesoongan.adminservice.contest.AdminContestDtos.RankingStatsResponse;
 import com.mock.maesoongan.adminservice.contest.AdminContestDtos.RankingStatusResponse;
+import com.mock.maesoongan.adminservice.contest.ContestEvents.ContestEvent;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -43,9 +44,11 @@ public class AdminContestService {
     private static final DateTimeFormatter PERIOD_FORMATTER = DateTimeFormatter.ofPattern("yyyy.MM.dd");
 
     private final JdbcTemplate jdbcTemplate;
+    private final ContestEventPublisher contestEventPublisher;
 
-    public AdminContestService(JdbcTemplate jdbcTemplate) {
+    public AdminContestService(JdbcTemplate jdbcTemplate, ContestEventPublisher contestEventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.contestEventPublisher = contestEventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -171,6 +174,7 @@ public class AdminContestService {
 
         long contestId = key.longValue();
         insertAudit(adminId, "CREATE_CONTEST", "CONTEST", contestId, request.title());
+        publishContestEvent("CONTEST_CREATED", contestId);
         return new ContestMutationResponse(contestId, status, "Contest created");
     }
 
@@ -275,18 +279,21 @@ public class AdminContestService {
                 contestId);
 
         insertAudit(currentAdminId(), "UPDATE_CONTEST", "CONTEST", contestId, request.title());
+        publishContestEvent("CONTEST_UPDATED", contestId);
         return new ContestMutationResponse(contestId, status, "Contest updated");
     }
 
     @Transactional
     public ContestMutationResponse endContest(long contestId) {
         updateContestStatus(contestId, "ENDED", "END_CONTEST");
+        publishContestEvent("CONTEST_CLOSED", contestId);
         return new ContestMutationResponse(contestId, "ENDED", "Contest ended");
     }
 
     @Transactional
     public ContestMutationResponse cancelContest(long contestId) {
         updateContestStatus(contestId, "CANCELED", "CANCEL_CONTEST");
+        publishContestEvent("CONTEST_DELETED", contestId);
         return new ContestMutationResponse(contestId, "CANCELED", "Contest canceled");
     }
 
@@ -574,6 +581,37 @@ public class AdminContestService {
                 where id = ?
                 """, status, LocalDateTime.now(), contestId);
         insertAudit(currentAdminId(), action, "CONTEST", contestId, status);
+    }
+
+    private void publishContestEvent(String eventType, long contestId) {
+        contestEventPublisher.publish(getContestEvent(eventType, contestId));
+    }
+
+    private ContestEvent getContestEvent(String eventType, long contestId) {
+        return jdbcTemplate.queryForObject("""
+                        select id,
+                               title,
+                               status,
+                               seed_money,
+                               start_at,
+                               end_at,
+                               created_at,
+                               updated_at
+                        from contest
+                        where id = ?
+                        """,
+                (rs, rowNum) -> new ContestEvent(
+                        eventType,
+                        rs.getLong("id"),
+                        rs.getString("title"),
+                        rs.getString("status"),
+                        rs.getBigDecimal("seed_money"),
+                        toLocalDateTime(rs.getTimestamp("start_at")),
+                        toLocalDateTime(rs.getTimestamp("end_at")),
+                        toLocalDateTime(rs.getTimestamp("created_at")),
+                        toLocalDateTime(rs.getTimestamp("updated_at"))
+                ),
+                contestId);
     }
 
     private void ensureRankingTarget(long contestId, long memberId) {
