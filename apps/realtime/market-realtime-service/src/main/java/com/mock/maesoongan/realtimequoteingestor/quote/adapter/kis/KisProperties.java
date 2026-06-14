@@ -20,6 +20,8 @@ public class KisProperties {
     private final String htsTopViewQuery;
     private final String inquirePriceTrId;
     private final String inquirePricePath;
+    private final String inquireOrderbookTrId;
+    private final String inquireOrderbookPath;
     private final String indexQuoteTrId;
     private final String indexQuotePath;
     private final String customerType;
@@ -39,6 +41,8 @@ public class KisProperties {
             @Value("${kis.hts-top-view-query:FID_COND_MRKT_DIV_CODE=J&FID_COND_SCR_DIV_CODE=20171&FID_INPUT_ISCD=0000&FID_DIV_CLS_CODE=0&FID_BLNG_CLS_CODE=0&FID_TRGT_CLS_CODE=111111111&FID_TRGT_EXLS_CLS_CODE=0000000000}") String htsTopViewQuery,
             @Value("${kis.inquire-price-tr-id:FHKST01010100}") String inquirePriceTrId,
             @Value("${kis.inquire-price-path:/uapi/domestic-stock/v1/quotations/inquire-price}") String inquirePricePath,
+            @Value("${kis.inquire-orderbook-tr-id:FHKST01010200}") String inquireOrderbookTrId,
+            @Value("${kis.inquire-orderbook-path:/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn}") String inquireOrderbookPath,
             @Value("${kis.index-quote-tr-id:FHPUP02100000}") String indexQuoteTrId,
             @Value("${kis.index-quote-path:/uapi/domestic-stock/v1/quotations/inquire-index-price}") String indexQuotePath,
             @Value("${kis.customer-type:P}") String customerType
@@ -57,6 +61,8 @@ public class KisProperties {
         this.htsTopViewQuery = htsTopViewQuery;
         this.inquirePriceTrId = inquirePriceTrId;
         this.inquirePricePath = inquirePricePath;
+        this.inquireOrderbookTrId = inquireOrderbookTrId;
+        this.inquireOrderbookPath = inquireOrderbookPath;
         this.indexQuoteTrId = indexQuoteTrId;
         this.indexQuotePath = indexQuotePath;
         this.customerType = customerType;
@@ -116,6 +122,14 @@ public class KisProperties {
 
     public String inquirePricePath() {
         return inquirePricePath;
+    }
+
+    public String inquireOrderbookTrId() {
+        return inquireOrderbookTrId;
+    }
+
+    public String inquireOrderbookPath() {
+        return inquireOrderbookPath;
     }
 
     public String indexQuoteTrId() {

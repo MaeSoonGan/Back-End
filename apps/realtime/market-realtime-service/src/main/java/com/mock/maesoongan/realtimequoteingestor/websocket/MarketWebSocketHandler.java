@@ -1,6 +1,8 @@
 package com.mock.maesoongan.realtimequoteingestor.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketOrderbookService;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketStatusService;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.event.MarketIndexUpdatedEvent;
@@ -38,6 +40,8 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final QuoteIngestionService quoteIngestionService;
     private final MarketStatusService marketStatusService;
+    private final MarketPriceService marketPriceService;
+    private final MarketOrderbookService marketOrderbookService;
     private final ConcurrentMap<WebSocketSession, Set<String>> priceSessionSubscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<WebSocketSession, Set<String>> orderbookSessionSubscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<WebSocketSession, Set<String>> indexSessionSubscriptions = new ConcurrentHashMap<>();
@@ -48,11 +52,15 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
     public MarketWebSocketHandler(
             ObjectMapper objectMapper,
             QuoteIngestionService quoteIngestionService,
-            MarketStatusService marketStatusService
+            MarketStatusService marketStatusService,
+            MarketPriceService marketPriceService,
+            MarketOrderbookService marketOrderbookService
     ) {
         this.objectMapper = objectMapper;
         this.quoteIngestionService = quoteIngestionService;
         this.marketStatusService = marketStatusService;
+        this.marketPriceService = marketPriceService;
+        this.marketOrderbookService = marketOrderbookService;
     }
 
     @Override
@@ -209,11 +217,12 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void subscribePrice(WebSocketSession session, List<String> stockCodes) {
-        List<String> newlySubscribedCodes = subscribeStockChannel(session, stockCodes, priceSessionSubscriptions, priceSubscriberCounts);
-        if (!newlySubscribedCodes.isEmpty()) {
-            quoteIngestionService.subscribePrices(newlySubscribedCodes);
+    private void subscribePrice(WebSocketSession session, List<String> stockCodes) throws IOException {
+        StockSubscriptionDelta delta = subscribeStockChannel(session, stockCodes, priceSessionSubscriptions, priceSubscriberCounts);
+        if (!delta.globalCodes().isEmpty()) {
+            quoteIngestionService.subscribePrices(delta.globalCodes());
         }
+        sendInitialPriceSnapshots(session, delta.sessionCodes());
     }
 
     private void unsubscribePrice(WebSocketSession session, List<String> stockCodes) {
@@ -221,11 +230,12 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         decrementGlobalPriceSubscriptions(removedCodes);
     }
 
-    private void subscribeOrderbook(WebSocketSession session, List<String> stockCodes) {
-        List<String> newlySubscribedCodes = subscribeStockChannel(session, stockCodes, orderbookSessionSubscriptions, orderbookSubscriberCounts);
-        if (!newlySubscribedCodes.isEmpty()) {
-            quoteIngestionService.subscribeOrderbooks(newlySubscribedCodes);
+    private void subscribeOrderbook(WebSocketSession session, List<String> stockCodes) throws IOException {
+        StockSubscriptionDelta delta = subscribeStockChannel(session, stockCodes, orderbookSessionSubscriptions, orderbookSubscriberCounts);
+        if (!delta.globalCodes().isEmpty()) {
+            quoteIngestionService.subscribeOrderbooks(delta.globalCodes());
         }
+        sendInitialOrderbookSnapshots(session, delta.sessionCodes());
     }
 
     private void unsubscribeOrderbook(WebSocketSession session, List<String> stockCodes) {
@@ -233,20 +243,51 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         decrementGlobalOrderbookSubscriptions(removedCodes);
     }
 
-    private List<String> subscribeStockChannel(
+    private StockSubscriptionDelta subscribeStockChannel(
             WebSocketSession session,
             List<String> stockCodes,
             ConcurrentMap<WebSocketSession, Set<String>> sessionSubscriptions,
             ConcurrentMap<String, AtomicInteger> subscriberCounts
     ) {
         if (stockCodes.isEmpty()) {
-            return List.of();
+            return new StockSubscriptionDelta(List.of(), List.of());
         }
         Set<String> subscriptions = sessionSubscriptions.computeIfAbsent(session, key -> ConcurrentHashMap.newKeySet());
-        return stockCodes.stream()
+        List<String> sessionCodes = stockCodes.stream()
                 .filter(subscriptions::add)
+                .toList();
+        List<String> globalCodes = sessionCodes.stream()
                 .filter(stockCode -> incrementGlobalSubscription(stockCode, subscriberCounts))
                 .toList();
+        return new StockSubscriptionDelta(sessionCodes, globalCodes);
+    }
+
+    private void sendInitialPriceSnapshots(WebSocketSession session, List<String> stockCodes) throws IOException {
+        for (String stockCode : stockCodes) {
+            try {
+                var price = marketPriceService.findPrice(stockCode);
+                if (price.isPresent()) {
+                    send(session, MarketWebSocketMessage.priceUpdate(price.get()));
+                }
+            } catch (RuntimeException exception) {
+                log.warn("Failed to send initial price snapshot. sessionId={}, code={}, err={}",
+                        session.getId(), stockCode, exception.getMessage());
+            }
+        }
+    }
+
+    private void sendInitialOrderbookSnapshots(WebSocketSession session, List<String> stockCodes) throws IOException {
+        for (String stockCode : stockCodes) {
+            try {
+                var orderbook = marketOrderbookService.findOrderbook(stockCode);
+                if (orderbook.isPresent()) {
+                    send(session, MarketWebSocketMessage.orderbookUpdate(orderbook.get()));
+                }
+            } catch (RuntimeException exception) {
+                log.warn("Failed to send initial orderbook snapshot. sessionId={}, code={}, err={}",
+                        session.getId(), stockCode, exception.getMessage());
+            }
+        }
     }
 
     private List<String> unsubscribeStockChannel(
@@ -389,5 +430,11 @@ public class MarketWebSocketHandler extends TextWebSocketHandler {
         ack.put("stockCodes", stockCodes);
         ack.put("markets", markets);
         return ack;
+    }
+
+    private record StockSubscriptionDelta(
+            List<String> sessionCodes,
+            List<String> globalCodes
+    ) {
     }
 }

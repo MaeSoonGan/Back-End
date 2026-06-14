@@ -3,6 +3,7 @@ package com.mock.maesoongan.realtimequoteingestor.market.application;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mock.maesoongan.realtimequoteingestor.common.BusinessException;
+import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisCurrentPriceClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPriceResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPricesResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,12 +13,16 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MarketPriceServiceTest {
@@ -25,6 +30,7 @@ class MarketPriceServiceTest {
     private StringRedisTemplate redisTemplate;
     private ValueOperations<String, String> valueOperations;
     private ObjectMapper objectMapper;
+    private KisCurrentPriceClient kisCurrentPriceClient;
     private MarketPriceService marketPriceService;
 
     @BeforeEach
@@ -32,7 +38,8 @@ class MarketPriceServiceTest {
         redisTemplate = mock(StringRedisTemplate.class);
         valueOperations = mock(ValueOperations.class);
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        marketPriceService = new MarketPriceService(redisTemplate, objectMapper);
+        kisCurrentPriceClient = mock(KisCurrentPriceClient.class);
+        marketPriceService = new MarketPriceService(redisTemplate, objectMapper, kisCurrentPriceClient, 300);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
@@ -49,6 +56,7 @@ class MarketPriceServiceTest {
     @Test
     void getPriceThrowsNotFoundWhenCacheIsMissing() {
         when(valueOperations.get("stock:999999:price")).thenReturn(null);
+        when(kisCurrentPriceClient.fetchPrice("999999")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> marketPriceService.getPrice("999999"))
                 .isInstanceOfSatisfying(BusinessException.class, exception -> {
@@ -61,12 +69,26 @@ class MarketPriceServiceTest {
     void getPricesReturnsFoundAndNotFoundCodes() throws Exception {
         when(valueOperations.get("stock:005930:price")).thenReturn(objectMapper.writeValueAsString(price("005930")));
         when(valueOperations.get("stock:999999:price")).thenReturn(null);
+        when(kisCurrentPriceClient.fetchPrice("999999")).thenReturn(Optional.empty());
 
         MarketPricesResponse response = marketPriceService.getPrices("005930, ,999999");
 
         assertThat(response.prices()).hasSize(1);
         assertThat(response.prices().get(0).stockCode()).isEqualTo("005930");
         assertThat(response.notFound()).containsExactly("999999");
+    }
+
+    @Test
+    void getPriceFetchesFromKisAndCachesWhenCacheIsMissing() {
+        when(valueOperations.get("stock:005930:price")).thenReturn(null);
+        when(kisCurrentPriceClient.fetchPrice("005930")).thenReturn(Optional.of(kisPrice("Samsung")));
+
+        MarketPriceResponse response = marketPriceService.getPrice("005930");
+
+        assertThat(response.stockCode()).isEqualTo("005930");
+        assertThat(response.stockName()).isEqualTo("Samsung");
+        assertThat(response.currentPrice()).isEqualByComparingTo("75400");
+        verify(valueOperations).set(eq("stock:005930:price"), anyString(), eq(Duration.ofSeconds(300)));
     }
 
     @Test
@@ -109,6 +131,22 @@ class MarketPriceServiceTest {
                 new BigDecimal("1200"),
                 new BigDecimal("1.62"),
                 "2",
+                123456L,
+                new BigDecimal("9300000000"),
+                new BigDecimal("76000"),
+                new BigDecimal("74000"),
+                new BigDecimal("74200"),
+                LocalDateTime.of(2026, 6, 11, 10, 0)
+        );
+    }
+
+    private KisCurrentPriceClient.KisPriceSnapshot kisPrice(String stockName) {
+        return new KisCurrentPriceClient.KisPriceSnapshot(
+                stockName,
+                new BigDecimal("75400"),
+                new BigDecimal("1200"),
+                new BigDecimal("1.62"),
+                "+",
                 123456L,
                 new BigDecimal("9300000000"),
                 new BigDecimal("76000"),

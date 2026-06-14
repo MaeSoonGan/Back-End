@@ -2,6 +2,8 @@ package com.mock.maesoongan.realtimequoteingestor.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketOrderbookService;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketStatusService;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketIndexResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
@@ -23,9 +25,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -36,6 +39,8 @@ class MarketWebSocketHandlerTest {
     private ObjectMapper objectMapper;
     private QuoteIngestionService quoteIngestionService;
     private MarketStatusService marketStatusService;
+    private MarketPriceService marketPriceService;
+    private MarketOrderbookService marketOrderbookService;
     private MarketWebSocketHandler handler;
     private WebSocketSession session;
 
@@ -44,10 +49,20 @@ class MarketWebSocketHandlerTest {
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         quoteIngestionService = mock(QuoteIngestionService.class);
         marketStatusService = mock(MarketStatusService.class);
-        handler = new MarketWebSocketHandler(objectMapper, quoteIngestionService, marketStatusService);
+        marketPriceService = mock(MarketPriceService.class);
+        marketOrderbookService = mock(MarketOrderbookService.class);
+        handler = new MarketWebSocketHandler(
+                objectMapper,
+                quoteIngestionService,
+                marketStatusService,
+                marketPriceService,
+                marketOrderbookService
+        );
         session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn("session-1");
         when(session.isOpen()).thenReturn(true);
+        when(marketPriceService.findPrice(anyString())).thenReturn(Optional.empty());
+        when(marketOrderbookService.findOrderbook(anyString())).thenReturn(Optional.empty());
         when(marketStatusService.currentStatus()).thenReturn(new MarketStatusResponse(
                 MarketStatusType.OPEN,
                 "open",
@@ -56,6 +71,24 @@ class MarketWebSocketHandlerTest {
                 LocalTime.of(10, 0),
                 true
         ));
+    }
+
+    @Test
+    void subscribePriceSendsInitialPriceSnapshotWhenAvailable() throws Exception {
+        when(marketPriceService.findPrice("005930")).thenReturn(Optional.of(price("005930")));
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {
+                  "action": "SUBSCRIBE_PRICE",
+                  "stockCodes": ["005930"]
+                }
+                """));
+
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, atLeastOnce()).sendMessage(captor.capture());
+        assertThat(captor.getAllValues().stream().map(TextMessage::getPayload).toList())
+                .anyMatch(payload -> payload.contains("\"type\":\"PRICE_UPDATE\"") && payload.contains("005930"));
     }
 
     @Test
@@ -127,6 +160,24 @@ class MarketWebSocketHandlerTest {
 
         verify(quoteIngestionService).subscribeOrderbooks(List.of("005930"));
         verify(quoteIngestionService).subscribeIndexes(List.of("KOSPI", "KOSDAQ"));
+    }
+
+    @Test
+    void subscribeOrderbookSendsInitialOrderbookSnapshotWhenAvailable() throws Exception {
+        when(marketOrderbookService.findOrderbook("005930")).thenReturn(Optional.of(orderbook("005930")));
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {
+                  "action": "SUBSCRIBE_ORDERBOOK",
+                  "stockCodes": ["005930"]
+                }
+                """));
+
+        ArgumentCaptor<TextMessage> captor = ArgumentCaptor.forClass(TextMessage.class);
+        verify(session, atLeastOnce()).sendMessage(captor.capture());
+        assertThat(captor.getAllValues().stream().map(TextMessage::getPayload).toList())
+                .anyMatch(payload -> payload.contains("\"type\":\"ORDERBOOK_UPDATE\"") && payload.contains("005930"));
     }
 
     @Test
@@ -240,6 +291,16 @@ class MarketWebSocketHandlerTest {
                 new BigDecimal("76000"),
                 new BigDecimal("74000"),
                 new BigDecimal("74200"),
+                LocalDateTime.of(2026, 6, 11, 10, 0)
+        );
+    }
+
+    private MarketOrderbookResponse orderbook(String stockCode) {
+        return new MarketOrderbookResponse(
+                stockCode,
+                "Samsung",
+                List.of(new OrderbookLevel(new BigDecimal("75500"), 100L)),
+                List.of(new OrderbookLevel(new BigDecimal("75400"), 200L)),
                 LocalDateTime.of(2026, 6, 11, 10, 0)
         );
     }
