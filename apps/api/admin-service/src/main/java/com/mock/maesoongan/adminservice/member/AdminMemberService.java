@@ -569,6 +569,22 @@ public class AdminMemberService {
                     LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")), LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
 
             insertAudit(adminId, "PAY_SEED_MONEY", "MEMBER", memberId, request.reason());
+
+            // 지급받은 회원에게 알림(설정 토글과 무관하게 항상 발송). best-effort.
+            try {
+                String body = String.format(
+                        "시드머니 %,d원이 지급되었습니다. (사유: %s)",
+                        request.amount().longValue(),
+                        request.reason() == null ? "" : request.reason());
+                jdbcTemplate.update("""
+                        insert into notification
+                            (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
+                        values (?, 'SEED_PAYMENT', '시드머니 지급', ?, 0, null, null, 'CREATED', 0, now())
+                        """, memberId, body);
+            } catch (RuntimeException ignored) {
+                // 알림 실패가 지급 처리를 막지 않도록 무시
+            }
+
             succeededIds.add(memberId);
         }
 
