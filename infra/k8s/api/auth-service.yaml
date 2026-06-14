@@ -32,7 +32,7 @@ spec:
         role: service
       containers:
         - name: auth-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/auth-service:133d6b69154fa497d5a743115cce7626868e17ea
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/auth-service:013cc070ed0c2d04f8d238ead76154b946db35b6
           imagePullPolicy: Always
           ports:
             - containerPort: 8081
