@@ -106,11 +106,11 @@ public class AuthService {
     @Transactional(readOnly = true)
     public ExpiresInResponse sendEmailCode(SendEmailCodeRequest request) {
         if (SIGNUP.equals(request.purpose()) && exists("select count(*) from member_snapshot where email = ?", request.email())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
+            throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다.");
         }
         if ((FIND_ID.equals(request.purpose()) || RESET_PASSWORD.equals(request.purpose()))
                 && !exists("select count(*) from member_snapshot where email = ? and status <> 'DELETED'", request.email())) {
-            throw new BusinessException(HttpStatus.NOT_FOUND, "Email is not registered.");
+            throw new BusinessException(HttpStatus.NOT_FOUND, "가입되지 않은 이메일입니다.");
         }
 
         String code = verificationCodeStore.issue(EMAIL, request.email(), request.purpose());
@@ -136,16 +136,16 @@ public class AuthService {
     public RegisterResponse register(RegisterRequest request) {
         validateUserId(request.userId());
         if (!verificationCodeStore.isSignupEmailVerified(request.email())) {
-            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "Email verification is required.");
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "이메일 인증이 필요합니다.");
         }
         if (exists("select count(*) from member_snapshot where login_id = ?", request.userId())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "UserId is already in use.");
+            throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다.");
         }
         if (exists("select count(*) from member_snapshot where email = ?", request.email())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
+            throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다.");
         }
         if (exists("select count(*) from member_snapshot where nickname = ?", request.nickname())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "Nickname is already in use.");
+            throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 닉네임입니다.");
         }
 
         String requestId = signupRequestIdStore.getOrIssue(request.email(), request.userId());
@@ -164,11 +164,19 @@ public class AuthService {
     @Transactional(readOnly = true)
     public FindIdResponse findId(FindIdRequest request) {
         verificationCodeStore.verify(EMAIL, request.email(), FIND_ID, request.code());
-        onPremMemberClient.findLoginId(new OnPremFindLoginIdRequest(
-                UUID.randomUUID().toString(),
-                request.email(),
-                request.phone()
-        ));
+        // 전화번호가 있을 때만 온프렘 회원조회를 보조 호출. 아이디 응답은 아래 findByEmail(AWS)에서 나오므로
+        // 온프렘 호출 생략/실패는 결과에 영향 없음(best-effort).
+        if (request.phone() != null && !request.phone().isBlank()) {
+            try {
+                onPremMemberClient.findLoginId(new OnPremFindLoginIdRequest(
+                        UUID.randomUUID().toString(),
+                        request.email(),
+                        request.phone()
+                ));
+            } catch (RuntimeException ignored) {
+                // 온프렘 회원조회 실패는 아이디 찾기(이메일 기준 응답)에 영향 없음
+            }
+        }
         AuthMember member = findByEmail(request.email())
                 .orElseThrow(() -> new BusinessException(HttpStatus.ACCEPTED, "LoginId find request accepted."));
 
@@ -414,7 +422,7 @@ public class AuthService {
         }
         if (!normalized.equals(profile.nickname())
                 && exists("select count(*) from member_snapshot where nickname = ? and member_id <> ? and status <> 'DELETED'", normalized, profile.memberId())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "Nickname is already in use.");
+            throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 닉네임입니다.");
         }
         return normalized;
     }
@@ -442,7 +450,7 @@ public class AuthService {
             return profile.email();
         }
         if (exists("select count(*) from member_snapshot where email = ? and member_id <> ? and status <> 'DELETED'", normalized, profile.memberId())) {
-            throw new BusinessException(HttpStatus.CONFLICT, "Email is already registered.");
+            throw new BusinessException(HttpStatus.CONFLICT, "이미 사용 중인 이메일입니다.");
         }
         return normalized;
     }

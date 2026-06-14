@@ -90,7 +90,8 @@ public class AdminNoticeService {
                 asc = "asc".equalsIgnoreCase(parts[1].trim());
             }
         }
-        return "order by n.is_pinned desc, n.created_at " + (asc ? "asc" : "desc") + ", n.id desc";
+        // 삭제(DELETED) 공지는 고정 여부와 무관하게 항상 맨 아래로 보낸다.
+        return "order by (n.status = 'DELETED') asc, n.is_pinned desc, n.created_at " + (asc ? "asc" : "desc") + ", n.id desc";
     }
 
     @Transactional(readOnly = true)
@@ -230,6 +231,7 @@ public class AdminNoticeService {
         jdbcTemplate.update("""
                 update notice
                 set status = 'DELETED',
+                    is_pinned = false,
                     updated_at = ?
                 where id = ?
                 """, LocalDateTime.now(), noticeId);
@@ -326,7 +328,7 @@ public class AdminNoticeService {
         jdbcTemplate.update("""
                 insert into audit_log (admin_id, action, target_type, target_id, reason, result, created_at)
                 values (?, ?, ?, ?, ?, 'SUCCESS', ?)
-                """, adminId, action, targetType, targetId, reason, LocalDateTime.now());
+                """, adminId, action, targetType, targetId, reason, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
     }
 
     private long count(String sql, Object... args) {

@@ -151,6 +151,8 @@ public final class AdminContestDtos {
             long participantCount,
             long rankedCount,
             long excludedCount,
+            long profitCount,
+            long lossCount,
             BigDecimal averageProfitRate,
             BigDecimal highestProfitRate,
             BigDecimal lowestProfitRate,
