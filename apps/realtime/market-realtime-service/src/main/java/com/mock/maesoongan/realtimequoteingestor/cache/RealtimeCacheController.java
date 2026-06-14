@@ -22,6 +22,7 @@ public class RealtimeCacheController {
     private static final String PRICE_KEY_SUFFIX = ":price";
     private static final String ORDERBOOK_KEY_PREFIX = "stock:";
     private static final String ORDERBOOK_KEY_SUFFIX = ":orderbook";
+    private static final String LAST_CLOSE_ORDERBOOK_KEY_SUFFIX = ":orderbook:last-close";
     private static final String INDEX_KEY_PREFIX = "market:index:";
 
     private final RedisCacheProbe redisCacheProbe;
@@ -61,6 +62,18 @@ public class RealtimeCacheController {
             @PathVariable String stockCode
     ) {
         return ApiResponse.success(redisCacheProbe.get(ORDERBOOK_KEY_PREFIX + stockCode + ORDERBOOK_KEY_SUFFIX));
+    }
+
+    @GetMapping("/api/realtime/cache/orderbook/{stockCode}/last-close")
+    @Operation(
+            summary = "Redis 마지막 호가 원본 확인",
+            description = "`stock:{stockCode}:orderbook:last-close` 키에 TTL 없이 저장된 마지막 호가 JSON 원본을 조회합니다."
+    )
+    public ApiResponse<RedisCacheProbe.RedisCacheValue> lastCloseOrderbook(
+            @Parameter(description = "6자리 종목 코드", example = "005930")
+            @PathVariable String stockCode
+    ) {
+        return ApiResponse.success(redisCacheProbe.get(ORDERBOOK_KEY_PREFIX + stockCode + LAST_CLOSE_ORDERBOOK_KEY_SUFFIX));
     }
 
     @GetMapping("/api/realtime/cache/index/{market}")

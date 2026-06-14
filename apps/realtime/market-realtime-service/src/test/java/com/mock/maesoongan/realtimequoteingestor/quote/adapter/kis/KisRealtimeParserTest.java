@@ -153,6 +153,10 @@ class KisRealtimeParserTest {
                 "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
                 "FHPUP02100000",
                 "/uapi/domestic-stock/v1/quotations/inquire-index-price",
+                "FHKST03010100",
+                "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+                "J",
+                "0",
                 "P"
         );
     }

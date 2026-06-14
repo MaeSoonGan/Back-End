@@ -2,6 +2,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketOrderbookService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceMapper;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceService;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketIndexResponse;
@@ -52,7 +53,9 @@ public class RedisQuoteCacheWriter implements QuoteCacheWriter {
 
     @Override
     public void saveOrderbook(OrderbookQuoteEvent event) {
-        redisTemplate.opsForValue().set(orderbookKey(event.code()), toJson(event), quoteTtl);
+        String json = toJson(event);
+        redisTemplate.opsForValue().set(orderbookKey(event.code()), json, quoteTtl);
+        redisTemplate.opsForValue().set(MarketOrderbookService.lastCloseOrderbookKey(event.code()), json);
     }
 
     @Override

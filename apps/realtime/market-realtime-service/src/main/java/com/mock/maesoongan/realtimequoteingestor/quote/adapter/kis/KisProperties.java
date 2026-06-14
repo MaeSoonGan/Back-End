@@ -24,6 +24,10 @@ public class KisProperties {
     private final String inquireOrderbookPath;
     private final String indexQuoteTrId;
     private final String indexQuotePath;
+    private final String dailyChartTrId;
+    private final String dailyChartPath;
+    private final String dailyChartMarketDivCode;
+    private final String dailyChartAdjustedPrice;
     private final String customerType;
 
     public KisProperties(
@@ -45,6 +49,10 @@ public class KisProperties {
             @Value("${kis.inquire-orderbook-path:/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn}") String inquireOrderbookPath,
             @Value("${kis.index-quote-tr-id:FHPUP02100000}") String indexQuoteTrId,
             @Value("${kis.index-quote-path:/uapi/domestic-stock/v1/quotations/inquire-index-price}") String indexQuotePath,
+            @Value("${kis.daily-chart-tr-id:FHKST03010100}") String dailyChartTrId,
+            @Value("${kis.daily-chart-path:/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice}") String dailyChartPath,
+            @Value("${kis.daily-chart-market-div-code:J}") String dailyChartMarketDivCode,
+            @Value("${kis.daily-chart-adjusted-price:0}") String dailyChartAdjustedPrice,
             @Value("${kis.customer-type:P}") String customerType
     ) {
         this.appKey = appKey;
@@ -65,6 +73,10 @@ public class KisProperties {
         this.inquireOrderbookPath = inquireOrderbookPath;
         this.indexQuoteTrId = indexQuoteTrId;
         this.indexQuotePath = indexQuotePath;
+        this.dailyChartTrId = dailyChartTrId;
+        this.dailyChartPath = dailyChartPath;
+        this.dailyChartMarketDivCode = dailyChartMarketDivCode;
+        this.dailyChartAdjustedPrice = dailyChartAdjustedPrice;
         this.customerType = customerType;
     }
 
@@ -138,6 +150,22 @@ public class KisProperties {
 
     public String indexQuotePath() {
         return indexQuotePath;
+    }
+
+    public String dailyChartTrId() {
+        return dailyChartTrId;
+    }
+
+    public String dailyChartPath() {
+        return dailyChartPath;
+    }
+
+    public String dailyChartMarketDivCode() {
+        return dailyChartMarketDivCode;
+    }
+
+    public String dailyChartAdjustedPrice() {
+        return dailyChartAdjustedPrice;
     }
 
     public String customerType() {

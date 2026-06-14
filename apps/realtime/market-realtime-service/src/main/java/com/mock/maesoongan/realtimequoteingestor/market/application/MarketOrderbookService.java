@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisOrderbookClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
+import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusType;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.stock.StockNameResolver;
 import org.slf4j.Logger;
@@ -24,11 +25,13 @@ public class MarketOrderbookService {
     private static final Logger log = LoggerFactory.getLogger(MarketOrderbookService.class);
     private static final String ORDERBOOK_KEY_PREFIX = "stock:";
     private static final String ORDERBOOK_KEY_SUFFIX = ":orderbook";
+    private static final String LAST_CLOSE_ORDERBOOK_KEY_SUFFIX = ":orderbook:last-close";
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final KisOrderbookClient kisOrderbookClient;
     private final StockNameResolver stockNameResolver;
+    private final MarketStatusService marketStatusService;
     private final Duration quoteTtl;
     private final ZoneId zoneId = ZoneId.of("Asia/Seoul");
 
@@ -37,25 +40,44 @@ public class MarketOrderbookService {
             ObjectMapper objectMapper,
             KisOrderbookClient kisOrderbookClient,
             StockNameResolver stockNameResolver,
+            MarketStatusService marketStatusService,
             @Value("${redis.quote-ttl-seconds:300}") long quoteTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.kisOrderbookClient = kisOrderbookClient;
         this.stockNameResolver = stockNameResolver;
+        this.marketStatusService = marketStatusService;
         this.quoteTtl = Duration.ofSeconds(quoteTtlSeconds);
     }
 
     public Optional<MarketOrderbookResponse> findOrderbook(String stockCode) {
-        Optional<MarketOrderbookResponse> cachedOrderbook = findCachedOrderbook(stockCode);
+        Optional<MarketOrderbookResponse> cachedOrderbook = findCachedOrderbook(orderbookKey(stockCode));
         if (cachedOrderbook.isPresent()) {
             return cachedOrderbook;
         }
-        return fetchAndCacheOrderbook(stockCode);
+        if (!canRequestLiveOrderbook()) {
+            return findCachedOrderbook(lastCloseOrderbookKey(stockCode));
+        }
+        Optional<MarketOrderbookResponse> fetchedOrderbook = fetchAndCacheOrderbook(stockCode);
+        if (fetchedOrderbook.isPresent()) {
+            return fetchedOrderbook;
+        }
+        return findCachedOrderbook(lastCloseOrderbookKey(stockCode));
     }
 
-    private Optional<MarketOrderbookResponse> findCachedOrderbook(String stockCode) {
-        String json = redisTemplate.opsForValue().get(orderbookKey(stockCode));
+    private boolean canRequestLiveOrderbook() {
+        try {
+            MarketStatusType status = marketStatusService.currentStatus().marketStatus();
+            return status == MarketStatusType.OPEN || status == MarketStatusType.PRE_MARKET;
+        } catch (RuntimeException exception) {
+            log.warn("Failed to resolve market status for orderbook fallback. err={}", exception.getMessage());
+            return true;
+        }
+    }
+
+    private Optional<MarketOrderbookResponse> findCachedOrderbook(String key) {
+        String json = redisTemplate.opsForValue().get(key);
         if (!StringUtils.hasText(json)) {
             return Optional.empty();
         }
@@ -103,6 +125,10 @@ public class MarketOrderbookService {
                     objectMapper.writeValueAsString(event),
                     quoteTtl
             );
+            redisTemplate.opsForValue().set(
+                    lastCloseOrderbookKey(response.stockCode()),
+                    objectMapper.writeValueAsString(event)
+            );
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to serialize market orderbook", exception);
         } catch (RuntimeException exception) {
@@ -112,5 +138,9 @@ public class MarketOrderbookService {
 
     public static String orderbookKey(String stockCode) {
         return ORDERBOOK_KEY_PREFIX + stockCode + ORDERBOOK_KEY_SUFFIX;
+    }
+
+    public static String lastCloseOrderbookKey(String stockCode) {
+        return ORDERBOOK_KEY_PREFIX + stockCode + LAST_CLOSE_ORDERBOOK_KEY_SUFFIX;
     }
 }

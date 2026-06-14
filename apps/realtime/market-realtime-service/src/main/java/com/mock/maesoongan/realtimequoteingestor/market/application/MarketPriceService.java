@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.realtimequoteingestor.common.BusinessException;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisCurrentPriceClient;
+import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisDailyClosePriceClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPriceResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPriceSummary;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPricesResponse;
@@ -30,17 +31,20 @@ public class MarketPriceService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final KisCurrentPriceClient kisCurrentPriceClient;
+    private final KisDailyClosePriceClient kisDailyClosePriceClient;
     private final Duration quoteTtl;
 
     public MarketPriceService(
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             KisCurrentPriceClient kisCurrentPriceClient,
+            KisDailyClosePriceClient kisDailyClosePriceClient,
             @Value("${redis.quote-ttl-seconds:300}") long quoteTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.kisCurrentPriceClient = kisCurrentPriceClient;
+        this.kisDailyClosePriceClient = kisDailyClosePriceClient;
         this.quoteTtl = Duration.ofSeconds(quoteTtlSeconds);
     }
 
@@ -100,6 +104,10 @@ public class MarketPriceService {
     private Optional<MarketPriceResponse> fetchAndCachePrice(String stockCode) {
         Optional<MarketPriceResponse> response = kisCurrentPriceClient.fetchPrice(stockCode)
                 .map(snapshot -> toResponse(stockCode, snapshot));
+        if (response.isEmpty()) {
+            response = kisDailyClosePriceClient.fetchLatestClose(stockCode)
+                    .map(snapshot -> toResponse(stockCode, snapshot));
+        }
         response.ifPresent(this::cachePrice);
         return response;
     }
@@ -119,6 +127,24 @@ public class MarketPriceService {
                 snapshot.low(),
                 snapshot.open(),
                 snapshot.timestamp()
+        );
+    }
+
+    private MarketPriceResponse toResponse(String stockCode, KisDailyClosePriceClient.KisDailyCloseSnapshot snapshot) {
+        String stockName = StringUtils.hasText(snapshot.stockName()) ? snapshot.stockName() : stockCode;
+        return new MarketPriceResponse(
+                stockCode,
+                stockName,
+                snapshot.closePrice(),
+                snapshot.changePrice(),
+                snapshot.changeRate(),
+                snapshot.changeSign(),
+                snapshot.volume(),
+                snapshot.tradingValue(),
+                snapshot.high(),
+                snapshot.low(),
+                snapshot.open(),
+                snapshot.tradeDate().atTime(15, 30)
         );
     }
 

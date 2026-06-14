@@ -2,6 +2,7 @@ package com.mock.maesoongan.realtimequoteingestor.quote.adapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketOrderbookService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceMapper;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookLevel;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
@@ -54,11 +55,16 @@ class RedisQuoteCacheWriterTest {
                 startsWith("{\"type\":\"ORDERBOOK\""),
                 eq(Duration.ofSeconds(30))
         );
+        verify(valueOperations).set(
+                eq("stock:005930:orderbook:last-close"),
+                startsWith("{\"type\":\"ORDERBOOK\"")
+        );
     }
 
     @Test
     void createsStableRedisKeys() {
         assertEquals("stock:005930:orderbook", RedisQuoteCacheWriter.orderbookKey("005930"));
+        assertEquals("stock:005930:orderbook:last-close", MarketOrderbookService.lastCloseOrderbookKey("005930"));
         assertEquals("market:index:KOSPI", RedisQuoteCacheWriter.indexKey("KOSPI"));
     }
 
