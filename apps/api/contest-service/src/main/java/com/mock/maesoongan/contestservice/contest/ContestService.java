@@ -15,6 +15,7 @@ import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationRes
 import com.mock.maesoongan.contestservice.contest.ContestDtos.PageInfo;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.PageResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.RankingItem;
+import com.mock.maesoongan.contestservice.contest.ContestParticipationEvents.ContestParticipationEvent;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,14 +30,17 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class ContestService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ContestParticipationEventPublisher contestParticipationEventPublisher;
 
-    public ContestService(JdbcTemplate jdbcTemplate) {
+    public ContestService(JdbcTemplate jdbcTemplate, ContestParticipationEventPublisher contestParticipationEventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.contestParticipationEventPublisher = contestParticipationEventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -149,7 +153,7 @@ public class ContestService {
     }
 
     @Transactional
-    public ContestJoinResponse joinContest(long contestId, long memberId) {
+    public ContestJoinResponse joinContest(long contestId, long memberId, String userId) {
         ContestRow contest = findContest(contestId);
         if (contest == null || !contest.isPublic() || !"ALL".equals(contest.joinType())) {
             throw notFound("Contest not found");
@@ -165,6 +169,7 @@ public class ContestService {
         }
 
         // 재참가(이전에 나가 WITHDRAWN 상태로 남은 행)도 처리: 유니크 제약 충돌 시 기존 행을 ACTIVE로 갱신
+        LocalDateTime confirmedAt = LocalDateTime.now();
         jdbcTemplate.update("""
                 insert into contest_participation (contest_id, member_id, seed_money, status, joined_at)
                 values (?, ?, ?, 'ACTIVE', ?)
@@ -172,7 +177,17 @@ public class ContestService {
                     status = 'ACTIVE',
                     seed_money = values(seed_money),
                     joined_at = values(joined_at)
-                """, contestId, memberId, contest.seedMoney(), LocalDateTime.now());
+                """, contestId, memberId, contest.seedMoney(), confirmedAt);
+
+        contestParticipationEventPublisher.publish(new ContestParticipationEvent(
+                "CONTEST_PARTICIPATION_CONFIRMED",
+                UUID.randomUUID().toString(),
+                "CONFIRMED",
+                memberId,
+                userId,
+                contestId,
+                confirmedAt
+        ));
 
         return new ContestJoinResponse(
                 contestId,

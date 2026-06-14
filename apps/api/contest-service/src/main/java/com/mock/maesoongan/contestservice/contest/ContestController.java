@@ -77,7 +77,11 @@ public class ContestController {
     @Operation(summary = "Join contest")
     @PostMapping("/api/contests/{contestId}/join")
     public ApiResponse<ContestJoinResponse> joinContest(@PathVariable long contestId) {
-        return ApiResponse.success(contestService.joinContest(contestId, currentMemberProvider.memberId()));
+        return ApiResponse.success(contestService.joinContest(
+                contestId,
+                currentMemberProvider.memberId(),
+                currentMemberProvider.loginId()
+        ));
     }
 
     @Operation(summary = "Leave contest")
