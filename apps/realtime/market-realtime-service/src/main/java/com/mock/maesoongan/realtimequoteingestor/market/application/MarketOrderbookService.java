@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisOrderbookClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
-import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusType;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.stock.StockNameResolver;
 import org.slf4j.Logger;
@@ -31,7 +30,6 @@ public class MarketOrderbookService {
     private final ObjectMapper objectMapper;
     private final KisOrderbookClient kisOrderbookClient;
     private final StockNameResolver stockNameResolver;
-    private final MarketStatusService marketStatusService;
     private final Duration quoteTtl;
     private final ZoneId zoneId = ZoneId.of("Asia/Seoul");
 
@@ -40,14 +38,12 @@ public class MarketOrderbookService {
             ObjectMapper objectMapper,
             KisOrderbookClient kisOrderbookClient,
             StockNameResolver stockNameResolver,
-            MarketStatusService marketStatusService,
             @Value("${redis.quote-ttl-seconds:300}") long quoteTtlSeconds
     ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.kisOrderbookClient = kisOrderbookClient;
         this.stockNameResolver = stockNameResolver;
-        this.marketStatusService = marketStatusService;
         this.quoteTtl = Duration.ofSeconds(quoteTtlSeconds);
     }
 
@@ -56,24 +52,11 @@ public class MarketOrderbookService {
         if (cachedOrderbook.isPresent()) {
             return cachedOrderbook;
         }
-        if (!canRequestLiveOrderbook()) {
-            return findCachedOrderbook(lastCloseOrderbookKey(stockCode));
-        }
         Optional<MarketOrderbookResponse> fetchedOrderbook = fetchAndCacheOrderbook(stockCode);
         if (fetchedOrderbook.isPresent()) {
             return fetchedOrderbook;
         }
         return findCachedOrderbook(lastCloseOrderbookKey(stockCode));
-    }
-
-    private boolean canRequestLiveOrderbook() {
-        try {
-            MarketStatusType status = marketStatusService.currentStatus().marketStatus();
-            return status == MarketStatusType.OPEN || status == MarketStatusType.PRE_MARKET;
-        } catch (RuntimeException exception) {
-            log.warn("Failed to resolve market status for orderbook fallback. err={}", exception.getMessage());
-            return true;
-        }
     }
 
     private Optional<MarketOrderbookResponse> findCachedOrderbook(String key) {

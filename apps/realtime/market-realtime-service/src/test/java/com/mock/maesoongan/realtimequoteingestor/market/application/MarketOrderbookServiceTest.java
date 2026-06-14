@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mock.maesoongan.realtimequoteingestor.market.adapter.kis.KisOrderbookClient;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
-import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusResponse;
-import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketStatusType;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookLevel;
 import com.mock.maesoongan.realtimequoteingestor.quote.domain.OrderbookQuoteEvent;
 import com.mock.maesoongan.realtimequoteingestor.stock.StockNameResolver;
@@ -17,7 +15,6 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,7 +23,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class MarketOrderbookServiceTest {
@@ -35,7 +31,6 @@ class MarketOrderbookServiceTest {
     private ValueOperations<String, String> valueOperations;
     private ObjectMapper objectMapper;
     private KisOrderbookClient kisOrderbookClient;
-    private MarketStatusService marketStatusService;
     private MarketOrderbookService marketOrderbookService;
 
     @BeforeEach
@@ -44,17 +39,14 @@ class MarketOrderbookServiceTest {
         valueOperations = mock(ValueOperations.class);
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         kisOrderbookClient = mock(KisOrderbookClient.class);
-        marketStatusService = mock(MarketStatusService.class);
         marketOrderbookService = new MarketOrderbookService(
                 redisTemplate,
                 objectMapper,
                 kisOrderbookClient,
                 new StockNameResolver(false, null),
-                marketStatusService,
                 300
         );
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(marketStatusService.currentStatus()).thenReturn(marketStatus(MarketStatusType.OPEN));
     }
 
     @Test
@@ -84,9 +76,9 @@ class MarketOrderbookServiceTest {
     }
 
     @Test
-    void findOrderbookFallsBackToLastCloseWithoutKisWhenMarketIsClosed() throws Exception {
+    void findOrderbookFallsBackToLastCloseWhenRealtimeCacheAndKisAreMissing() throws Exception {
         when(valueOperations.get("stock:005930:orderbook")).thenReturn(null);
-        when(marketStatusService.currentStatus()).thenReturn(marketStatus(MarketStatusType.CLOSED));
+        when(kisOrderbookClient.fetchOrderbook("005930")).thenReturn(Optional.empty());
         when(valueOperations.get("stock:005930:orderbook:last-close"))
                 .thenReturn(objectMapper.writeValueAsString(orderbookEvent("005930", "Samsung")));
 
@@ -96,7 +88,6 @@ class MarketOrderbookServiceTest {
         assertThat(response.get().stockCode()).isEqualTo("005930");
         assertThat(response.get().stockName()).isEqualTo("Samsung");
         assertThat(response.get().asks().get(0).price()).isEqualByComparingTo("75500");
-        verifyNoInteractions(kisOrderbookClient);
     }
 
     @Test
@@ -137,14 +128,4 @@ class MarketOrderbookServiceTest {
         );
     }
 
-    private MarketStatusResponse marketStatus(MarketStatusType status) {
-        return new MarketStatusResponse(
-                status,
-                status.name(),
-                LocalTime.of(9, 0),
-                LocalTime.of(15, 30),
-                LocalTime.of(10, 0),
-                status == MarketStatusType.OPEN
-        );
-    }
 }

@@ -72,23 +72,7 @@ public class KisOrderbookClient {
                 return Optional.empty();
             }
 
-            JsonNode output = orderbookOutput(root);
-            if (output.isMissingNode() || output.isNull()) {
-                return Optional.empty();
-            }
-
-            List<OrderbookLevel> asks = levels(output, "askp", "askp_rsqn");
-            List<OrderbookLevel> bids = levels(output, "bidp", "bidp_rsqn");
-            if (asks.isEmpty() || bids.isEmpty()) {
-                return Optional.empty();
-            }
-
-            return Optional.of(new KisOrderbookSnapshot(
-                    text(output, "hts_kor_isnm"),
-                    asks,
-                    bids,
-                    LocalDateTime.now(zoneId).withNano(0)
-            ));
+            return parseSnapshot(stockCode, root);
         } catch (java.io.IOException exception) {
             log.warn("KIS inquire-orderbook request failed. code={}, err={}", stockCode, exception.getMessage());
             return Optional.empty();
@@ -101,6 +85,27 @@ public class KisOrderbookClient {
         }
     }
 
+    Optional<KisOrderbookSnapshot> parseSnapshot(String stockCode, JsonNode root) {
+        JsonNode output = orderbookOutput(root);
+        if (output.isMissingNode() || output.isNull()) {
+            return Optional.empty();
+        }
+
+        List<OrderbookLevel> asks = levels(output, "askp", "askp_rsqn");
+        List<OrderbookLevel> bids = levels(output, "bidp", "bidp_rsqn");
+        if (asks.isEmpty() || bids.isEmpty()) {
+            log.warn("KIS inquire-orderbook has no levels. code={}, outputType={}", stockCode, output.getNodeType());
+            return Optional.empty();
+        }
+
+        return Optional.of(new KisOrderbookSnapshot(
+                text(output, "hts_kor_isnm"),
+                asks,
+                bids,
+                LocalDateTime.now(zoneId).withNano(0)
+        ));
+    }
+
     private URI uri(String stockCode) {
         String baseUrl = trimTrailingSlash(properties.baseUrl());
         String path = properties.inquireOrderbookPath();
@@ -111,11 +116,21 @@ public class KisOrderbookClient {
     }
 
     private JsonNode orderbookOutput(JsonNode root) {
-        JsonNode output1 = root.path("output1");
+        JsonNode output1 = firstObject(root.path("output1"));
         if (!output1.isMissingNode() && !output1.isNull()) {
             return output1;
         }
-        return root.path("output");
+        return firstObject(root.path("output"));
+    }
+
+    private JsonNode firstObject(JsonNode node) {
+        if (!node.isArray()) {
+            return node;
+        }
+        if (node.isEmpty()) {
+            return node.path(0);
+        }
+        return node.get(0);
     }
 
     private List<OrderbookLevel> levels(JsonNode output, String pricePrefix, String quantityPrefix) {
