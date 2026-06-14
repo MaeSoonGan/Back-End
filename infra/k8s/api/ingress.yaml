@@ -43,6 +43,13 @@ spec:
                 name: market-realtime-service
                 port:
                   number: 8087
+          - path: /api/market/orderbook
+            pathType: Prefix
+            backend:
+              service:
+                name: market-realtime-service
+                port:
+                  number: 8087
           - path: /api/realtime
             pathType: Prefix
             backend:

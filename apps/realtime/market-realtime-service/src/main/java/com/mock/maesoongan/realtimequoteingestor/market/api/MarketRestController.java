@@ -1,10 +1,12 @@
 package com.mock.maesoongan.realtimequoteingestor.market.api;
 
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketIndexQuoteService;
+import com.mock.maesoongan.realtimequoteingestor.market.application.MarketOrderbookService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketPriceService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketRankingService;
 import com.mock.maesoongan.realtimequoteingestor.market.application.MarketStatusService;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketIndexResponse;
+import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketOrderbookResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPriceResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketPricesResponse;
 import com.mock.maesoongan.realtimequoteingestor.market.dto.MarketRankingResponse;
@@ -27,17 +29,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class MarketRestController {
 
     private final MarketPriceService marketPriceService;
+    private final MarketOrderbookService marketOrderbookService;
     private final MarketStatusService marketStatusService;
     private final MarketRankingService marketRankingService;
     private final MarketIndexQuoteService marketIndexQuoteService;
 
     public MarketRestController(
             MarketPriceService marketPriceService,
+            MarketOrderbookService marketOrderbookService,
             MarketStatusService marketStatusService,
             MarketRankingService marketRankingService,
             MarketIndexQuoteService marketIndexQuoteService
     ) {
         this.marketPriceService = marketPriceService;
+        this.marketOrderbookService = marketOrderbookService;
         this.marketStatusService = marketStatusService;
         this.marketRankingService = marketRankingService;
         this.marketIndexQuoteService = marketIndexQuoteService;
@@ -65,6 +70,18 @@ public class MarketRestController {
             @RequestParam String codes
     ) {
         return marketPriceService.getPrices(codes);
+    }
+
+    @GetMapping("/api/market/orderbook/{stockCode}")
+    @Operation(
+            summary = "단일 종목 최신 호가 조회",
+            description = "Redis에 저장된 특정 종목의 최신 매도/매수 호가를 조회합니다. 없으면 한투 REST로 조회 후 캐시하며, 화면 초기 로딩에서 사용합니다."
+    )
+    public MarketOrderbookResponse orderbook(
+            @Parameter(description = "6자리 종목 코드", example = "005930")
+            @PathVariable String stockCode
+    ) {
+        return marketOrderbookService.getOrderbook(stockCode);
     }
 
     @GetMapping("/api/market/indices")
