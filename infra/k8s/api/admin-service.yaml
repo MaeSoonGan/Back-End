@@ -32,7 +32,7 @@ spec:
         role: service
       containers:
         - name: admin-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/admin-service:396ea4d4bdecda06b91b7d4643bbdc799bced091
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/admin-service:4b9c6cec2300192e47576165df3a7df1871c220b
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
