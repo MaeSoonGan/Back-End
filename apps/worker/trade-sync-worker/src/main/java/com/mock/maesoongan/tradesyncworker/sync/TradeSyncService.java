@@ -1,6 +1,7 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.AccountEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Optional;
@@ -188,6 +190,58 @@ public class TradeSyncService {
                 "PORTFOLIO",
                 request.memberId() + ":" + defaultContestId(request.contestId()),
                 () -> upsertPortfolioSnapshot(request)
+        );
+    }
+
+    public SyncResult syncAccountEvent(AccountEvent event) {
+        String eventId = event.effectiveEventId();
+        String aggregateId = event.accountId() == null ? event.memberId() + ":" + defaultContestId(event.contestId()) : String.valueOf(event.accountId());
+        if (!"SUCCESS".equalsIgnoreCase(event.status())) {
+            upsertSyncEventLog(
+                    eventId,
+                    event.eventType(),
+                    "ACCOUNT",
+                    aggregateId,
+                    "FAILED",
+                    "Account event status is " + event.status(),
+                    LocalDateTime.now()
+            );
+            return new SyncResult(eventId, event.eventType(), "ACCOUNT", aggregateId, "FAILED", event.status(), LocalDateTime.now());
+        }
+
+        String eventType = normalize(event.eventType());
+        if (!"BASIC_ACCOUNT_CREATED".equals(eventType) && !"CONTEST_ACCOUNT_CREATED".equals(eventType)) {
+            throw new IllegalArgumentException("Unsupported account eventType: " + event.eventType());
+        }
+
+        return processEvent(
+                eventId,
+                event.eventType(),
+                "ACCOUNT",
+                aggregateId,
+                () -> upsertPortfolioSnapshot(toPortfolioSyncRequest(event))
+        );
+    }
+
+    private PortfolioSyncRequest toPortfolioSyncRequest(AccountEvent event) {
+        BigDecimal availableCash = event.availableCash();
+        BigDecimal initialCash = event.initialCash();
+        LocalDateTime createdAt = event.createdAt() == null ? LocalDateTime.now() : event.createdAt();
+        return new PortfolioSyncRequest(
+                event.effectiveEventId(),
+                event.memberId(),
+                event.contestId(),
+                availableCash,
+                availableCash,
+                BigDecimal.ZERO,
+                initialCash,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "[]",
+                1L,
+                createdAt
         );
     }
 
