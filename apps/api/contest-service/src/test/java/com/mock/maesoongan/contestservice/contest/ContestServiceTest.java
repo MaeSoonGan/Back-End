@@ -5,6 +5,7 @@ import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestJoinRespons
 import com.mock.maesoongan.contestservice.contest.ContestDtos.ContestResultResponse;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationRequest;
 import com.mock.maesoongan.contestservice.contest.ContestDtos.OrderValidationResponse;
+import com.mock.maesoongan.contestservice.contest.ContestParticipationEvents.ContestParticipationEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -31,12 +33,14 @@ import static org.mockito.Mockito.when;
 class ContestServiceTest {
 
     private JdbcTemplate jdbcTemplate;
+    private ContestParticipationEventPublisher contestParticipationEventPublisher;
     private ContestService contestService;
 
     @BeforeEach
     void setUp() {
         jdbcTemplate = mock(JdbcTemplate.class);
-        contestService = new ContestService(jdbcTemplate);
+        contestParticipationEventPublisher = mock(ContestParticipationEventPublisher.class);
+        contestService = new ContestService(jdbcTemplate, contestParticipationEventPublisher);
     }
 
     @Test
@@ -61,13 +65,21 @@ class ContestServiceTest {
         when(jdbcTemplate.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(0L, 12L);
         when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
 
-        ContestJoinResponse response = contestService.joinContest(3L, 7L);
+        ContestJoinResponse response = contestService.joinContest(3L, 7L, "testtest");
 
         assertThat(response.contestId()).isEqualTo(3L);
         assertThat(response.memberId()).isEqualTo(7L);
         assertThat(response.status()).isEqualTo("ACTIVE");
         assertThat(response.accountProvisionStatus()).isEqualTo("PENDING");
         verify(jdbcTemplate).update(anyString(), any(Object[].class));
+        verify(contestParticipationEventPublisher).publish(argThat(event ->
+                event.eventType().equals("CONTEST_PARTICIPATION_CONFIRMED")
+                        && event.status().equals("CONFIRMED")
+                        && event.memberId() == 7L
+                        && event.userId().equals("testtest")
+                        && event.contestId() == 3L
+                        && event.confirmedAt() != null
+        ));
     }
 
     @Test
@@ -75,7 +87,7 @@ class ContestServiceTest {
         mockContest("ACTIVE", true, "ALL", 100, "ALL", new BigDecimal("10000000"), null, null);
         when(jdbcTemplate.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(1L);
 
-        assertThatThrownBy(() -> contestService.joinContest(3L, 7L))
+        assertThatThrownBy(() -> contestService.joinContest(3L, 7L, "testtest"))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST));
     }
@@ -84,7 +96,7 @@ class ContestServiceTest {
     void joinContestThrowsNotFoundWhenContestDoesNotExist() {
         mockContestNotFound();
 
-        assertThatThrownBy(() -> contestService.joinContest(999L, 7L))
+        assertThatThrownBy(() -> contestService.joinContest(999L, 7L, "testtest"))
                 .isInstanceOfSatisfying(BusinessException.class, exception -> {
                     assertThat(exception.status()).isEqualTo(HttpStatus.NOT_FOUND);
                     assertThat(exception.code()).isEqualTo("NOT_FOUND");

@@ -132,7 +132,8 @@ class ContestControllerTest {
     @Test
     void joinContestReturnsParticipationStatus() throws Exception {
         when(currentMemberProvider.memberId()).thenReturn(7L);
-        when(contestService.joinContest(3L, 7L)).thenReturn(new ContestJoinResponse(
+        when(currentMemberProvider.loginId()).thenReturn("testtest");
+        when(contestService.joinContest(3L, 7L, "testtest")).thenReturn(new ContestJoinResponse(
                 3L,
                 7L,
                 "ACTIVE",
