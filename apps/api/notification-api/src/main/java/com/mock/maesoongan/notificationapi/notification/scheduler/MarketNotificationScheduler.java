@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 장 시작(평일 09:00) / 장 마감(평일 15:30) 알림 스케줄러.
+ * 장 시작 30분 전(평일 08:30) / 장 마감 30분 전(평일 15:00) 예고 알림 스케줄러.
  * 해당 수신설정(market_open/market_close)을 켠 활성 회원에게 알림을 한 번에 생성한다(INSERT...SELECT).
  */
 @Component
@@ -21,14 +21,14 @@ public class MarketNotificationScheduler {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @Scheduled(cron = "0 0 9 * * MON-FRI", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 30 8 * * MON-FRI", zone = "Asia/Seoul")
     public void notifyMarketOpen() {
-        fanOut("MARKET_OPEN", "장 시작", "오늘 주식시장이 개장했습니다", "market_open");
+        fanOut("MARKET_OPEN", "장 시작 예정", "30분 후 주식시장이 개장합니다", "market_open");
     }
 
-    @Scheduled(cron = "0 30 15 * * MON-FRI", zone = "Asia/Seoul")
+    @Scheduled(cron = "0 0 15 * * MON-FRI", zone = "Asia/Seoul")
     public void notifyMarketClose() {
-        fanOut("MARKET_CLOSE", "장 마감", "오늘 장이 마감됐습니다", "market_close");
+        fanOut("MARKET_CLOSE", "장 마감 예정", "30분 후 장이 마감됩니다", "market_close");
     }
 
     private void fanOut(String type, String title, String body, String settingColumn) {
