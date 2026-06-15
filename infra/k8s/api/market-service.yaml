@@ -31,7 +31,7 @@ spec:
         role: service
       containers:
         - name: market-service
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-service:cf402833237640209bc0c2354fe520e570e98f08
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/market-service:7ae44fa96a7b545d4754db528c6f6ef8bda13f71
           imagePullPolicy: Always
           ports:
             - containerPort: 8085
