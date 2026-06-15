@@ -31,7 +31,7 @@ spec:
         role: service
       containers:
         - name: notification-api
-          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/notification-api:3d7e759566ed002c50b012b0937e482806443290
+          image: 295234319852.dkr.ecr.ap-northeast-2.amazonaws.com/maesoongan/notification-api:068c1f9a8a829e954569c4a52721af15f04a0fa2
           imagePullPolicy: Always
           ports:
             - containerPort: 8086
