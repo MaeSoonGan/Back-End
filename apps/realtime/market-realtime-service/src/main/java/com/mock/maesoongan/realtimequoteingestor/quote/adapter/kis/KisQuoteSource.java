@@ -59,6 +59,7 @@ public class KisQuoteSource implements QuoteSource {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
     private final AtomicInteger reconnectAttempt = new AtomicInteger();
+    private final AtomicInteger priceParseWarningCount = new AtomicInteger();
     private final AtomicInteger orderbookParseWarningCount = new AtomicInteger();
     private final AtomicInteger indexParseWarningCount = new AtomicInteger();
 
@@ -354,6 +355,18 @@ public class KisQuoteSource implements QuoteSource {
         }
         KisRealtimeParser.EncryptionContext encryptionContext = encryptionContexts.get(parts[1]);
         KisRealtimeParser.ParsedRealtimeMessage parsed = parser.parse(message, encryptionContext);
+        if (properties.priceTrId().equals(parts[1]) && parsed.priceEvents().isEmpty()) {
+            int warningCount = priceParseWarningCount.incrementAndGet();
+            if (warningCount <= 5) {
+                log.warn(
+                        "No KIS price events parsed. trId={}, dataCount={}, fieldCount={}, encryptionFlag={}",
+                        parts[1],
+                        parts[2],
+                        parser.fieldCount(parts[3]),
+                        parts[0]
+                );
+            }
+        }
         if (properties.orderbookTrId().equals(parts[1]) && parsed.orderbookEvents().isEmpty()) {
             int warningCount = orderbookParseWarningCount.incrementAndGet();
             if (warningCount <= 5) {
