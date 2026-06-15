@@ -10,12 +10,15 @@ import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderCancelResultEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberCommandPayload;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberCommandResultEvent;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberSecurityEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.TradeSyncRequest;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -29,6 +32,8 @@ import java.util.Optional;
 
 @Service
 public class TradeSyncService {
+
+    private static final Logger log = LoggerFactory.getLogger(TradeSyncService.class);
 
     private static final DefaultRedisScript<Long> APPLY_CANCEL_RESERVATION_SCRIPT = new DefaultRedisScript<>("""
             local balance = redis.call('GET', KEYS[1])
@@ -517,6 +522,57 @@ public class TradeSyncService {
                 aggregateId,
                 action
         );
+    }
+
+    // 온프렘 member.security.event 처리: member_snapshot의 status/login_fail_count만 미러(확인-B), update-only(확인-A).
+    public SyncResult syncMemberSecurityEvent(MemberSecurityEvent event) {
+        if (event.memberId() == null) {
+            throw new IllegalArgumentException("memberId is required for member security event");
+        }
+        String aggregateId = String.valueOf(event.memberId());
+        return processEvent(
+                event.eventId(),
+                event.eventType(),
+                "MEMBER",
+                aggregateId,
+                () -> updateMemberSecurity(event)
+        );
+    }
+
+    private void updateMemberSecurity(MemberSecurityEvent event) {
+        // 보안 이벤트는 status / login_fail_count 만 갱신. nickname/email 등은 건드리지 않음(확인-B).
+        // 행이 없으면 갱신 대상 없음 → skip (signup 동기화 선행 전제, 확인-A: update-only).
+        int updated = jdbcTemplate.update("""
+                update member_snapshot
+                set status = coalesce(?, status),
+                    login_fail_count = coalesce(?, login_fail_count),
+                    updated_at = ?,
+                    synced_at = current_timestamp
+                where member_id = ?
+                """,
+                blankToNull(normalizeStatusOrNull(event.status())),
+                event.loginFailCount(),
+                securityEventTime(event),
+                event.memberId());
+        if (updated == 0) {
+            log.warn("member_snapshot not found for security event (update skipped). memberId={}, eventType={}",
+                    event.memberId(), event.eventType());
+        }
+    }
+
+    // ISO-8601(+09:00) 문자열 → KST LocalDateTime. 파싱 실패/누락 시 현재 KST.
+    private LocalDateTime securityEventTime(MemberSecurityEvent event) {
+        java.time.ZoneId kst = java.time.ZoneId.of("Asia/Seoul");
+        if (event.occurredAt() == null || event.occurredAt().isBlank()) {
+            return LocalDateTime.now(kst);
+        }
+        try {
+            return java.time.OffsetDateTime.parse(event.occurredAt())
+                    .atZoneSameInstant(kst)
+                    .toLocalDateTime();
+        } catch (java.time.format.DateTimeParseException exception) {
+            return LocalDateTime.now(kst);
+        }
     }
 
     private String aggregateId(MemberCommandResultEvent event) {

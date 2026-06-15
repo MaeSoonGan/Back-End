@@ -45,9 +45,11 @@ public class AdminMemberService {
     private static final DateTimeFormatter SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yy.MM.dd");
 
     private final JdbcTemplate jdbcTemplate;
+    private final MemberSecurityService memberSecurityService;
 
-    public AdminMemberService(JdbcTemplate jdbcTemplate) {
+    public AdminMemberService(JdbcTemplate jdbcTemplate, MemberSecurityService memberSecurityService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.memberSecurityService = memberSecurityService;
     }
 
     @Transactional(readOnly = true)
@@ -303,18 +305,9 @@ public class AdminMemberService {
                 continue;
             }
 
-            LocalDateTime suspendedAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
-            jdbcTemplate.update("""
-                    update member_snapshot
-                    set status = 'SUSPENDED', updated_at = ?
-                    where member_id = ?
-                    """, suspendedAt, memberId);
-
-            jdbcTemplate.update("""
-                    insert into account_suspension (member_id, admin_id, reason, status, created_at)
-                    values (?, ?, ?, 'SUSPENDED', ?)
-                    """, memberId, adminId, request.reason(), suspendedAt);
-
+            // AWS DB를 직접 바꾸지 않고 온프렘에 정지 명령 발행.
+            // 실제 정지(member_snapshot SUSPENDED, account_suspension)는 온프렘 ADMIN_SUSPENDED 결과 이벤트 수신 시 확정된다.
+            memberSecurityService.requestSuspend(memberId, adminId, request.reason());
             suspendedIds.add(memberId);
         }
 
@@ -440,36 +433,19 @@ public class AdminMemberService {
         }
 
         long adminId = currentAdminId();
-        LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
-        jdbcTemplate.update("""
-                update account_suspension
-                set status = 'RELEASED',
-                    released_at = ?,
-                    release_admin_id = ?,
-                    updated_at = ?
-                where id = ?
-                """, now, adminId, now, suspensionId);
 
-        // 정지 해제 시 로그인 실패 카운트/잠금도 초기화한다.
-        // (로그인 실패 누적 자동 정지였던 경우, 초기화하지 않으면 스케줄러가 곧 재정지함)
-        jdbcTemplate.update("""
-                update member_snapshot
-                set status = 'ACTIVE', login_fail_count = 0, updated_at = ?
-                where member_id = ?
-                """, now, suspension.memberId());
-        jdbcTemplate.update("""
-                update dev_member_auth
-                set login_fail_count = 0, locked_until = null, updated_at = ?
-                where member_id = ?
-                """, now, suspension.memberId());
+        // AWS DB를 직접 바꾸지 않고 온프렘에 해제 명령 발행.
+        // 실제 해제(account_suspension RELEASED, member_snapshot ACTIVE, login_fail_count 0)는
+        // 온프렘 LOCK_RELEASED 결과 이벤트 수신 시 확정된다.
+        memberSecurityService.requestRelease(suspension.memberId(), adminId, request.reason());
 
         insertAudit(adminId, "RELEASE_MEMBER", "MEMBER", suspension.memberId(), request.reason());
         return new ReleaseSuspensionResponse(
                 suspensionId,
                 suspension.memberId(),
-                "RELEASED",
-                "ACTIVE",
-                "계정 정지가 해제되었습니다."
+                "RELEASE_REQUESTED",
+                "SUSPENDED",
+                "정지 해제를 요청했습니다. 처리 완료 후 반영됩니다."
         );
     }
 
