@@ -326,6 +326,7 @@ public class OrderService {
                 "PENDING",
                 "OPEN",
                 "PARTIAL",
+                "PARTIALLY_FILLED",
                 "FILLED",
                 "CANCEL_REQUESTED",
                 "CANCEL_FAILED",
@@ -333,7 +334,7 @@ public class OrderService {
                 "CANCELED",
                 "REJECTED"
         ).contains(normalized)) {
-            throw badRequest("status must be ALL, PENDING, OPEN, PARTIAL, FILLED, CANCEL_REQUESTED, CANCEL_FAILED, CANCELLED, or REJECTED");
+            throw badRequest("status must be ALL, PENDING, OPEN, PARTIAL, PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, CANCEL_FAILED, CANCELLED, or REJECTED");
         }
         return "CANCELLED".equals(normalized) ? "CANCELED" : normalized;
     }

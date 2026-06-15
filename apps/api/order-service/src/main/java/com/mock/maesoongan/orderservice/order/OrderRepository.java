@@ -120,7 +120,7 @@ public class OrderRepository {
                     synced_at = ?
                 where member_id = ?
                   and order_id = ?
-                  and status in ('PENDING', 'OPEN', 'PARTIAL')
+                  and status in ('PENDING', 'OPEN', 'PARTIAL', 'PARTIALLY_FILLED')
                   and remaining_quantity > 0
                 """, requestedAt, requestedAt, memberId, orderId);
     }

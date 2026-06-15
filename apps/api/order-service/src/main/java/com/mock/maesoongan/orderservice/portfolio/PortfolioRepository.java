@@ -64,7 +64,7 @@ public class PortfolioRepository {
                   and contest_id = ?
                   and stock_code = ?
                   and side = 'SELL'
-                  and status in ('PENDING', 'OPEN', 'PARTIAL', 'CANCEL_REQUESTED')
+                  and status in ('PENDING', 'OPEN', 'PARTIAL', 'PARTIALLY_FILLED', 'CANCEL_REQUESTED')
                 """, Long.class, memberId, contestId, stockCode);
         return quantity == null ? 0 : quantity;
     }
@@ -133,7 +133,7 @@ public class PortfolioRepository {
                     synced_at = ?
                 where member_id = ?
                   and contest_id = ?
-                  and status in ('PENDING', 'OPEN', 'PARTIAL', 'CANCEL_REQUESTED')
+                  and status in ('PENDING', 'OPEN', 'PARTIAL', 'PARTIALLY_FILLED', 'CANCEL_REQUESTED')
                 """, canceledAt, canceledAt, memberId, contestId);
     }
 
