@@ -57,7 +57,7 @@ class TradeExecutionKafkaConsumerTest {
                   "updatedAvailableBalance": 9663500,
                   "holdingQuantity": 1,
                   "holdingAveragePrice": 336500,
-                  "confirmedAt": "2026-06-12T13:01:01"
+                  "confirmedAt": [2026, 6, 12, 13, 1, 1]
                 }
                 """);
 
