@@ -139,10 +139,10 @@ public class AdminNoticeService {
             jdbcTemplate.update("""
                     insert into notification
                         (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
-                    select m.member_id, 'NOTICE', ?, ?, 0, 'NOTICE', ?, 'CREATED', 0, now()
+                    select m.member_id, 'NOTICE', ?, ?, 0, 'NOTICE', ?, 'CREATED', 0, ?
                     from member_snapshot m
                     where m.status = 'ACTIVE'
-                    """, "[공지] " + title, body, noticeId);
+                    """, "[공지] " + title, body, noticeId, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
         } catch (RuntimeException exception) {
             log.warn("Failed to fan-out notice notification. noticeId={}, err={}", noticeId, exception.getMessage());
         }

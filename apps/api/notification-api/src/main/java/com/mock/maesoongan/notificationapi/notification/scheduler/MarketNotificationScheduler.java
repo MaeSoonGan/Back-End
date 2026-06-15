@@ -36,10 +36,11 @@ public class MarketNotificationScheduler {
             int created = jdbcTemplate.update("""
                     insert into notification
                         (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
-                    select s.member_id, ?, ?, ?, 0, null, null, 'CREATED', 0, now()
+                    select s.member_id, ?, ?, ?, 0, null, null, 'CREATED', 0, ?
                     from notification_setting s
                     join member_snapshot m on m.member_id = s.member_id and m.status = 'ACTIVE'
-                    where s.""" + settingColumn + " = 1", type, title, body);
+                    where s.""" + settingColumn + " = 1",
+                    type, title, body, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
             log.info("Market notification fan-out done. type={}, created={}", type, created);
         } catch (RuntimeException exception) {
             log.warn("Market notification fan-out failed. type={}, err={}", type, exception.getMessage());
