@@ -58,6 +58,42 @@ class PortfolioServiceTest {
     }
 
     @Test
+    void getSummaryAddsPendingReleaseToCachedAvailableBalance() {
+        when(portfolioRepository.findPortfolio(7L, 0L)).thenReturn(Optional.of(portfolioRow()));
+        when(valueOperations.get("balance:7:0")).thenReturn("750000");
+        when(valueOperations.get("balance:pending-release:7:0")).thenReturn("226200");
+
+        PortfolioSummaryResponse response = portfolioService.getSummary(7L);
+
+        assertThat(response.availableBalance()).isEqualByComparingTo("976200");
+        assertThat(response.reservedAmount()).isEqualByComparingTo("23800");
+    }
+
+    @Test
+    void getSummaryAddsCancelRequestedBuyAmountToCachedAvailableBalance() {
+        when(portfolioRepository.findPortfolio(7L, 0L)).thenReturn(Optional.of(portfolioRow()));
+        when(portfolioRepository.sumCancelRequestedBuyAmount(7L, 0L)).thenReturn(new BigDecimal("226200"));
+        when(valueOperations.get("balance:7:0")).thenReturn("750000");
+
+        PortfolioSummaryResponse response = portfolioService.getSummary(7L);
+
+        assertThat(response.availableBalance()).isEqualByComparingTo("976200");
+        assertThat(response.reservedAmount()).isEqualByComparingTo("23800");
+    }
+
+    @Test
+    void getSummaryCapsPendingReleaseAdjustedAvailableBalanceAtCashBalance() {
+        when(portfolioRepository.findPortfolio(7L, 0L)).thenReturn(Optional.of(portfolioRow()));
+        when(valueOperations.get("balance:7:0")).thenReturn("900000");
+        when(valueOperations.get("balance:pending-release:7:0")).thenReturn("250000");
+
+        PortfolioSummaryResponse response = portfolioService.getSummary(7L);
+
+        assertThat(response.availableBalance()).isEqualByComparingTo("1000000");
+        assertThat(response.reservedAmount()).isEqualByComparingTo("0");
+    }
+
+    @Test
     void getHoldingsParsesHoldingsJsonAndCalculatesProfit() {
         when(portfolioRepository.findPortfolio(7L, 0L)).thenReturn(Optional.of(portfolioRowWithHoldings()));
         when(portfolioRepository.findStockPrice("005930"))

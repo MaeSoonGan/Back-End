@@ -58,7 +58,7 @@ public class PortfolioService {
     public PortfolioSummaryResponse getSummary(long memberId) {
         PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
         BigDecimal cashBalance = value(portfolio.cashBalance());
-        BigDecimal availableBalance = availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash());
+        BigDecimal availableBalance = availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash(), cashBalance);
         BigDecimal stockValuation = value(portfolio.stockEvaluationAmount());
         return new PortfolioSummaryResponse(
                 totalAsset(cashBalance, stockValuation, portfolio.totalAsset()),
@@ -75,7 +75,7 @@ public class PortfolioService {
     public AvailableCashResponse getAvailableCash(long memberId) {
         PortfolioRow portfolio = findPortfolio(memberId, DEFAULT_CONTEST_ID);
         BigDecimal cashBalance = value(portfolio.cashBalance());
-        BigDecimal availableBalance = availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash());
+        BigDecimal availableBalance = availableBalance(memberId, DEFAULT_CONTEST_ID, portfolio.availableCash(), cashBalance);
         return new AvailableCashResponse(cashBalance, availableBalance, reservedAmount(cashBalance, availableBalance));
     }
 
@@ -135,7 +135,7 @@ public class PortfolioService {
         var row = portfolioRepository.findContestAccount(memberId, contestId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Contest account not found"));
         BigDecimal cashBalance = value(row.cashBalance());
-        BigDecimal availableBalance = availableBalance(memberId, contestId, row.availableBalance());
+        BigDecimal availableBalance = availableBalance(memberId, contestId, row.availableBalance(), cashBalance);
         BigDecimal stockValuation = value(row.stockEvaluationAmount());
 
         return new ContestAccountResponse(
@@ -269,11 +269,12 @@ public class PortfolioService {
         }
     }
 
-    private BigDecimal availableBalance(long memberId, long contestId, BigDecimal fallback) {
+    private BigDecimal availableBalance(long memberId, long contestId, BigDecimal fallback, BigDecimal cashBalance) {
         try {
-            String cached = redisTemplate.opsForValue().get("balance:" + memberId + ":" + contestId);
+            String cached = redisTemplate.opsForValue().get(balanceKey(memberId, contestId));
             if (cached != null && !cached.isBlank()) {
-                return new BigDecimal(cached);
+                BigDecimal availableBalance = new BigDecimal(cached).add(releasableAmount(memberId, contestId));
+                return normalizeAvailableBalance(availableBalance, cashBalance);
             }
         } catch (NumberFormatException ignored) {
             // 캐시값 형식 오류 → DB값 사용 (Redis 장애 아님, 로그 불필요)
@@ -282,6 +283,35 @@ public class PortfolioService {
             log.warn("Redis 사용 불가 (balance:{}:{}) → DB값으로 폴백. cause={}", memberId, contestId, e.toString());
         }
         return value(fallback);
+    }
+
+    private BigDecimal pendingReleaseAmount(long memberId, long contestId) {
+        try {
+            String pending = redisTemplate.opsForValue().get(pendingReleaseKey(memberId, contestId));
+            if (pending == null || pending.isBlank()) {
+                return BigDecimal.ZERO;
+            }
+            return new BigDecimal(pending);
+        } catch (NumberFormatException ignored) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private BigDecimal releasableAmount(long memberId, long contestId) {
+        return pendingReleaseAmount(memberId, contestId).max(cancelRequestedBuyAmount(memberId, contestId));
+    }
+
+    private BigDecimal cancelRequestedBuyAmount(long memberId, long contestId) {
+        return value(portfolioRepository.sumCancelRequestedBuyAmount(memberId, contestId));
+    }
+
+    private BigDecimal normalizeAvailableBalance(BigDecimal availableBalance, BigDecimal cashBalance) {
+        BigDecimal normalized = value(availableBalance);
+        if (normalized.compareTo(BigDecimal.ZERO) < 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal maxAvailable = value(cashBalance);
+        return normalized.compareTo(maxAvailable) > 0 ? maxAvailable : normalized;
     }
 
     private BigDecimal reservedAmount(BigDecimal cashBalance, BigDecimal availableBalance) {

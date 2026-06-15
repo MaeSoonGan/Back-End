@@ -69,6 +69,18 @@ public class PortfolioRepository {
         return quantity == null ? 0 : quantity;
     }
 
+    public BigDecimal sumCancelRequestedBuyAmount(long memberId, long contestId) {
+        BigDecimal amount = jdbcTemplate.queryForObject("""
+                select coalesce(sum(order_price * remaining_quantity), 0)
+                from order_snapshot
+                where member_id = ?
+                  and contest_id = ?
+                  and side = 'BUY'
+                  and status = 'CANCEL_REQUESTED'
+                """, BigDecimal.class, memberId, contestId);
+        return amount == null ? BigDecimal.ZERO : amount;
+    }
+
     // 보유종목 평균 체결가(매수 가중평균) = Σ(체결금액) / Σ(체결수량), BUY 한정
     public Optional<BigDecimal> findAverageBuyPrice(long memberId, long contestId, String stockCode) {
         return queryOne("""

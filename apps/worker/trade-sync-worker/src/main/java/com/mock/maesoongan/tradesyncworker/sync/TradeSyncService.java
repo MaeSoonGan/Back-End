@@ -14,6 +14,7 @@ import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.TradeSyncRequest;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -28,6 +29,28 @@ import java.util.Optional;
 
 @Service
 public class TradeSyncService {
+
+    private static final DefaultRedisScript<Long> APPLY_CANCEL_RESERVATION_SCRIPT = new DefaultRedisScript<>("""
+            local balance = redis.call('GET', KEYS[1])
+            local releaseAmount = tonumber(ARGV[1])
+            local pendingAmount = tonumber(ARGV[2])
+            if releaseAmount > 0 and balance then
+                redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])
+            end
+            if pendingAmount > 0 then
+                local pending = redis.call('GET', KEYS[2])
+                if pending then
+                    local nextPending = tonumber(pending) - pendingAmount
+                    if nextPending > 0 then
+                        redis.call('SET', KEYS[2], tostring(nextPending))
+                    else
+                        redis.call('DEL', KEYS[2])
+                    end
+                end
+            end
+            redis.call('DEL', KEYS[3])
+            return 1
+            """, Long.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
@@ -142,7 +165,7 @@ public class TradeSyncService {
                             .orElseThrow(() -> new IllegalArgumentException("order_snapshot not found for orderId=" + event.orderId()));
                     updateOrderByCancelResult(event, eventType);
                     updatePortfolioCashByCancelResult(event, order);
-                    evictReservationCache(order.memberId(), defaultContestId(order.contestId()), event.orderId());
+                    applyCancelReservationToCache(event, eventType, order);
                 }
         );
     }
@@ -337,7 +360,9 @@ public class TradeSyncService {
                            stock_id,
                            stock_code,
                            stock_name,
-                           side
+                           side,
+                           order_price,
+                           remaining_quantity
                     from order_snapshot
                     where order_id = ?
                     """, (rs, rowNum) -> new OrderReference(
@@ -346,7 +371,9 @@ public class TradeSyncService {
                     rs.getLong("stock_id"),
                     rs.getString("stock_code"),
                     rs.getString("stock_name"),
-                    rs.getString("side")
+                    rs.getString("side"),
+                    rs.getBigDecimal("order_price"),
+                    rs.getInt("remaining_quantity")
             ), orderId));
         } catch (EmptyResultDataAccessException exception) {
             return Optional.empty();
@@ -361,7 +388,9 @@ public class TradeSyncService {
                 stock.stockId(),
                 stock.stockCode(),
                 nonBlank(event.stockName(), stock.stockName()),
-                event.orderType()
+                event.orderType(),
+                event.executedPrice(),
+                event.executedQuantity()
         );
     }
 
@@ -745,12 +774,34 @@ public class TradeSyncService {
         );
     }
 
-    private void evictReservationCache(long memberId, long contestId, long orderId) {
-        redisTemplate.delete(List.of(
-                balanceKey(memberId, contestId),
-                pendingReleaseKey(memberId, contestId),
-                cancelPendingKey(orderId)
-        ));
+    private void applyCancelReservationToCache(OrderCancelResultEvent event, String eventType, OrderReference order) {
+        long contestId = defaultContestId(order.contestId());
+        BigDecimal pendingAmount = cancelPendingAmount(event, order);
+        BigDecimal releaseAmount = "ORDER_CANCEL_CONFIRMED".equals(eventType) ? pendingAmount : BigDecimal.ZERO;
+
+        redisTemplate.execute(
+                APPLY_CANCEL_RESERVATION_SCRIPT,
+                List.of(
+                        balanceKey(order.memberId(), contestId),
+                        pendingReleaseKey(order.memberId(), contestId),
+                        cancelPendingKey(event.orderId())
+                ),
+                releaseAmount.toPlainString(),
+                pendingAmount.toPlainString()
+        );
+    }
+
+    private BigDecimal cancelPendingAmount(OrderCancelResultEvent event, OrderReference order) {
+        if (!"BUY".equalsIgnoreCase(order.side())) {
+            return BigDecimal.ZERO;
+        }
+        if (event.releasedAmount() != null && event.releasedAmount().compareTo(BigDecimal.ZERO) > 0) {
+            return event.releasedAmount();
+        }
+        if (order.orderPrice() == null || order.remainingQuantity() == null || order.remainingQuantity() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return order.orderPrice().multiply(BigDecimal.valueOf(order.remainingQuantity()));
     }
 
     private void upsertPortfolioSnapshot(PortfolioSyncRequest request) {
@@ -1020,7 +1071,9 @@ public class TradeSyncService {
             Long stockId,
             String stockCode,
             String stockName,
-            String side
+            String side,
+            BigDecimal orderPrice,
+            Integer remainingQuantity
     ) {
     }
 

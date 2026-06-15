@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -276,11 +277,84 @@ class TradeSyncServiceTest {
                 eq(1L),
                 eq(LocalDateTime.of(2026, 6, 11, 10, 3))
         );
-        verify(redisTemplate).delete(List.of(
-                "balance:7:3",
-                "balance:pending-release:7:3",
-                "cancel:pending:5001"
+        verify(redisTemplate).execute(
+                any(RedisScript.class),
+                eq(List.of("balance:7:3", "balance:pending-release:7:3", "cancel:pending:5001")),
+                eq("754000"),
+                eq("754000")
+        );
+    }
+
+    @Test
+    void syncOrderCancelResultReleasesRedisReservationWithoutUpdatedAvailableBalance() throws Exception {
+        mockUnprocessedEvent();
+        mockOrderReference();
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncResult result = tradeSyncService.syncOrderCancelResult(new OrderCancelResultEvent(
+                "ORDER_CANCEL_CONFIRMED",
+                "order-cancel-confirmed:5002",
+                5001L,
+                1001L,
+                "005930",
+                "Samsung",
+                "BUY",
+                "LIMIT",
+                new BigDecimal("75400"),
+                10,
+                0,
+                10,
+                null,
+                null,
+                null,
+                "CANCELED",
+                null,
+                LocalDateTime.of(2026, 6, 11, 10, 3)
         ));
+
+        assertThat(result.processStatus()).isEqualTo("SUCCESS");
+        verify(redisTemplate).execute(
+                any(RedisScript.class),
+                eq(List.of("balance:7:3", "balance:pending-release:7:3", "cancel:pending:5001")),
+                eq("754000"),
+                eq("754000")
+        );
+    }
+
+    @Test
+    void syncOrderCancelRejectedClearsPendingReleaseWithoutReturningBalance() throws Exception {
+        mockUnprocessedEvent();
+        mockOrderReference();
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncResult result = tradeSyncService.syncOrderCancelResult(new OrderCancelResultEvent(
+                "ORDER_CANCEL_REJECTED",
+                "order-cancel-rejected:5001",
+                5001L,
+                1001L,
+                "005930",
+                "Samsung",
+                "BUY",
+                "LIMIT",
+                new BigDecimal("75400"),
+                10,
+                10,
+                0,
+                null,
+                null,
+                null,
+                "REJECTED",
+                "already filled",
+                LocalDateTime.of(2026, 6, 11, 10, 3)
+        ));
+
+        assertThat(result.processStatus()).isEqualTo("SUCCESS");
+        verify(redisTemplate).execute(
+                any(RedisScript.class),
+                eq(List.of("balance:7:3", "balance:pending-release:7:3", "cancel:pending:5001")),
+                eq("0"),
+                eq("754000")
+        );
     }
 
     @Test
@@ -317,6 +391,8 @@ class TradeSyncServiceTest {
                     when(resultSet.getString("stock_code")).thenReturn("005930");
                     when(resultSet.getString("stock_name")).thenReturn("Samsung");
                     when(resultSet.getString("side")).thenReturn("BUY");
+                    when(resultSet.getBigDecimal("order_price")).thenReturn(new BigDecimal("75400"));
+                    when(resultSet.getInt("remaining_quantity")).thenReturn(10);
                     return rowMapper.mapRow(resultSet, 0);
                 });
     }
