@@ -37,13 +37,15 @@ class PortfolioControllerTest {
 
     private PortfolioService portfolioService;
     private CurrentMemberProvider currentMemberProvider;
+    private JdbcTemplate jdbcTemplate;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         portfolioService = mock(PortfolioService.class);
         currentMemberProvider = mock(CurrentMemberProvider.class);
-        mockMvc = standaloneSetup(new PortfolioController(portfolioService, currentMemberProvider, mock(JdbcTemplate.class)))
+        jdbcTemplate = mock(JdbcTemplate.class);
+        mockMvc = standaloneSetup(new PortfolioController(portfolioService, currentMemberProvider, jdbcTemplate))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

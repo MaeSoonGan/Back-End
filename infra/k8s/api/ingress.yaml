@@ -127,6 +127,13 @@ spec:
                 name: order-service
                 port:
                   number: 8084
+          - path: /api/contest-orders
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 8084
           - path: /api/portfolio
             pathType: Prefix
             backend:
