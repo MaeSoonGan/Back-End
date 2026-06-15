@@ -58,6 +58,7 @@ class OrderServiceTest {
         OrderRow order = orderRow("BUY", new BigDecimal("75400"), 3L, "PENDING");
         when(orderRepository.findOrder(7L, 1001L)).thenReturn(Optional.of(order));
         when(orderRepository.markCancelRequested(eq(7L), eq(1001L), any())).thenReturn(1);
+        when(orderRepository.findAccountId(7L, 0L)).thenReturn(Optional.of(7001L));
 
         CancelOrderResponse response = orderService.cancelOrder(7L, 1001L);
 
@@ -67,7 +68,7 @@ class OrderServiceTest {
         var eventCaptor = forClass(OrderCancelRequestedEvent.class);
         verify(orderEventPublisher).publishOrderCancelRequested(eventCaptor.capture());
         assertThat(eventCaptor.getValue().orderId()).isEqualTo(1001L);
-        assertThat(eventCaptor.getValue().accountId()).isEqualTo(7L);
+        assertThat(eventCaptor.getValue().accountId()).isEqualTo(7001L);
         assertThat(eventCaptor.getValue().requestedAt()).isNotNull();
     }
 
@@ -88,13 +89,14 @@ class OrderServiceTest {
         ));
         when(balanceCache.reserve(7L, 0L, new BigDecimal("754000"))).thenReturn(BalanceCache.ReserveResult.RESERVED);
         when(orderRepository.nextOrderId()).thenReturn(990003L);
+        when(orderRepository.findAccountId(7L, 0L)).thenReturn(Optional.of(7001L));
 
         orderService.createOrder(7L, request);
 
         var eventCaptor = forClass(OrderEvents.OrderRequestedEvent.class);
         verify(orderEventPublisher).publishOrderRequested(eventCaptor.capture());
         assertThat(eventCaptor.getValue().orderId()).isEqualTo(990003L);
-        assertThat(eventCaptor.getValue().accountId()).isEqualTo(7L);
+        assertThat(eventCaptor.getValue().accountId()).isEqualTo(7001L);
         assertThat(eventCaptor.getValue().stockCode()).isEqualTo("005930");
         assertThat(eventCaptor.getValue().stockName()).isEqualTo("\uC0BC\uC131\uC804\uC790");
         assertThat(eventCaptor.getValue().orderType()).isEqualTo("BUY");

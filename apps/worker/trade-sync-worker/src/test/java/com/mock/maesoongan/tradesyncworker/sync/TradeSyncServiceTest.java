@@ -179,6 +179,7 @@ class TradeSyncServiceTest {
                 contains("insert into portfolio_snapshot"),
                 eq(7L),
                 eq(3L),
+                eq(1001L),
                 eq(new BigDecimal("10000000")),
                 eq(new BigDecimal("10000000")),
                 eq(BigDecimal.ZERO),

@@ -69,6 +69,17 @@ public class OrderRepository {
         ), memberId, contestId);
     }
 
+    public Optional<Long> findAccountId(long memberId, long contestId) {
+        return queryOne("""
+                select account_id
+                from portfolio_snapshot
+                where member_id = ? and contest_id = ?
+                """, (rs, rowNum) -> {
+            long accountId = rs.getLong("account_id");
+            return rs.wasNull() ? null : accountId;
+        }, memberId, contestId);
+    }
+
     public long nextOrderId() {
         Long next = jdbcTemplate.queryForObject("""
                 select coalesce(max(order_id), 0) + 1

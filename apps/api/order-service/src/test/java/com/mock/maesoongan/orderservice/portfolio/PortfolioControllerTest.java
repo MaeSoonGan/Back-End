@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -42,7 +43,7 @@ class PortfolioControllerTest {
     void setUp() {
         portfolioService = mock(PortfolioService.class);
         currentMemberProvider = mock(CurrentMemberProvider.class);
-        mockMvc = standaloneSetup(new PortfolioController(portfolioService, currentMemberProvider))
+        mockMvc = standaloneSetup(new PortfolioController(portfolioService, currentMemberProvider, mock(JdbcTemplate.class)))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

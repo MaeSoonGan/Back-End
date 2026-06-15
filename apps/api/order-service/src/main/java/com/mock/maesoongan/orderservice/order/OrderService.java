@@ -116,7 +116,7 @@ public class OrderService {
 
             orderEventPublisher.publishOrderRequested(new OrderRequestedEvent(
                     orderId,
-                    accountId(memberId),
+                    accountId(memberId, contestId),
                     stock.stockCode(),
                     stock.stockName(),
                     side,
@@ -151,7 +151,7 @@ public class OrderService {
 
         orderEventPublisher.publishOrderCancelRequested(new OrderCancelRequestedEvent(
                 order.orderId(),
-                accountId(order.memberId()),
+                accountId(order.memberId(), order.contestId()),
                 now
         ));
 
@@ -280,8 +280,13 @@ public class OrderService {
         return "MARKET".equals(priceType) ? null : orderPrice;
     }
 
-    private long accountId(long memberId) {
-        return memberId;
+    private long accountId(long memberId, long contestId) {
+        return orderRepository.findAccountId(memberId, contestId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.BAD_REQUEST,
+                        "ACCOUNT_NOT_FOUND",
+                        "Account id was not found for memberId=" + memberId + ", contestId=" + contestId
+                ));
     }
 
     private String normalizeStockCode(String stockCode) {

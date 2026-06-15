@@ -219,7 +219,7 @@ public class TradeSyncService {
                 event.eventType(),
                 "ACCOUNT",
                 aggregateId,
-                () -> upsertPortfolioSnapshot(toPortfolioSyncRequest(event))
+                () -> upsertPortfolioSnapshot(toPortfolioSyncRequest(event), event.accountId())
         );
     }
 
@@ -443,10 +443,15 @@ public class TradeSyncService {
     }
 
     private void upsertPortfolioSnapshot(PortfolioSyncRequest request) {
+        upsertPortfolioSnapshot(request, null);
+    }
+
+    private void upsertPortfolioSnapshot(PortfolioSyncRequest request, Long accountId) {
         jdbcTemplate.update("""
                 insert into portfolio_snapshot (
                     member_id,
                     contest_id,
+                    account_id,
                     cash_balance,
                     available_cash,
                     stock_evaluation_amount,
@@ -460,8 +465,9 @@ public class TradeSyncService {
                     onprem_updated_at,
                     synced_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
                 on duplicate key update
+                    account_id = coalesce(values(account_id), account_id),
                     cash_balance = values(cash_balance),
                     available_cash = values(available_cash),
                     stock_evaluation_amount = values(stock_evaluation_amount),
@@ -477,6 +483,7 @@ public class TradeSyncService {
                 """,
                 request.memberId(),
                 defaultContestId(request.contestId()),
+                accountId,
                 request.cashBalance(),
                 request.availableCash(),
                 request.stockEvaluationAmount(),
