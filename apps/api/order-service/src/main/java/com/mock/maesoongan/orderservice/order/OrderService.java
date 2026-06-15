@@ -155,7 +155,7 @@ public class OrderService {
                 now
         ));
 
-        return new CancelOrderResponse(orderId, "CANCEL_REQUESTED", "주문이 취소 요청되었습니다.", now);
+        return new CancelOrderResponse(orderId, displayStatus("CANCEL_REQUESTED"), "주문이 취소 요청되었습니다.", now);
     }
 
     @Transactional(readOnly = true)
@@ -340,7 +340,7 @@ public class OrderService {
     }
 
     private String displayStatus(String status) {
-        return "CANCELED".equals(status) ? "CANCELLED" : status;
+        return "CANCELED".equals(status) || "CANCEL_REQUESTED".equals(status) ? "CANCELLED" : status;
     }
 
     private String normalizeTradeSide(String side) {

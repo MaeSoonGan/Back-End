@@ -54,7 +54,7 @@ class OrderServiceTest {
     }
 
     @Test
-    void cancelOrderMarksCancelRequestedAndPublishesEvent() {
+    void cancelOrderMarksCancelRequestedAndReturnsCancelledDisplayStatus() {
         OrderRow order = orderRow("BUY", new BigDecimal("75400"), 3L, "PENDING");
         when(orderRepository.findOrder(7L, 1001L)).thenReturn(Optional.of(order));
         when(orderRepository.markCancelRequested(eq(7L), eq(1001L), any())).thenReturn(1);
@@ -63,7 +63,7 @@ class OrderServiceTest {
         CancelOrderResponse response = orderService.cancelOrder(7L, 1001L);
 
         assertThat(response.orderId()).isEqualTo(1001L);
-        assertThat(response.status()).isEqualTo("CANCEL_REQUESTED");
+        assertThat(response.status()).isEqualTo("CANCELLED");
         verify(balanceCache).markCancelPending(7L, 0L, 1001L, new BigDecimal("226200"), CANCEL_PENDING_TTL);
         var eventCaptor = forClass(OrderCancelRequestedEvent.class);
         verify(orderEventPublisher).publishOrderCancelRequested(eventCaptor.capture());
@@ -159,6 +159,20 @@ class OrderServiceTest {
 
         assertThat(response.totalElements()).isEqualTo(21);
         assertThat(response.hasNext()).isTrue();
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.content().get(0).status()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void getOrdersDisplaysCancelRequestedAsCancelled() {
+        LocalDate date = LocalDate.of(2026, 6, 10);
+        when(orderRepository.countOrders(7L, 0L, "ALL", date)).thenReturn(1);
+        when(orderRepository.findOrders(7L, 0L, "ALL", date, 20, 0)).thenReturn(List.of(
+                orderRow("BUY", new BigDecimal("75400"), 3L, "CANCEL_REQUESTED")
+        ));
+
+        OrderListResponse response = orderService.getOrders(7L, 0L, "ALL", date, 0, 20);
+
         assertThat(response.content()).hasSize(1);
         assertThat(response.content().get(0).status()).isEqualTo("CANCELLED");
     }

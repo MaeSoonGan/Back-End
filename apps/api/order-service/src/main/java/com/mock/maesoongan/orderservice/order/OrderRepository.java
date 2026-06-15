@@ -141,12 +141,12 @@ public class OrderRepository {
                 from order_snapshot
                 where member_id = ?
                   and (? is null or contest_id = ?)
-                  and (? = 'ALL' or status = ?)
+                  and (? = 'ALL' or (? = 'CANCELED' and status in ('CANCELED', 'CANCEL_REQUESTED')) or status = ?)
                   and ordered_at >= ? and ordered_at < ?
                 order by ordered_at desc, order_id desc
                 limit ?
                 offset ?
-                """, this::toOrderRow, memberId, contestId, contestId, status, status,
+                """, this::toOrderRow, memberId, contestId, contestId, status, status, status,
                 date.atStartOfDay(), date.plusDays(1).atStartOfDay(), limit, offset);
     }
 
@@ -156,9 +156,9 @@ public class OrderRepository {
                 from order_snapshot
                 where member_id = ?
                   and (? is null or contest_id = ?)
-                  and (? = 'ALL' or status = ?)
+                  and (? = 'ALL' or (? = 'CANCELED' and status in ('CANCELED', 'CANCEL_REQUESTED')) or status = ?)
                   and ordered_at >= ? and ordered_at < ?
-                """, Integer.class, memberId, contestId, contestId, status, status,
+                """, Integer.class, memberId, contestId, contestId, status, status, status,
                 date.atStartOfDay(), date.plusDays(1).atStartOfDay());
         return count == null ? 0 : count;
     }
