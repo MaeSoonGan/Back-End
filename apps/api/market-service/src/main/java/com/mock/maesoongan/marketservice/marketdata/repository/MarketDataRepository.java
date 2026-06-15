@@ -200,12 +200,13 @@ public class MarketDataRepository {
         ), memberId, market, likeKeyword, likeKeyword);
     }
 
-    public List<WatchlistStockRow> findWatchlistStocks(Long memberId, List<String> markets) {
+    public List<WatchlistStockRow> findWatchlistStocks(Long memberId, List<String> markets, long contestId) {
         String placeholders = String.join(",", markets.stream().map(market -> "?").toList());
-        Object[] args = new Object[markets.size() + 1];
+        Object[] args = new Object[markets.size() + 2];
         args[0] = memberId;
+        args[1] = contestId;
         for (int i = 0; i < markets.size(); i++) {
-            args[i + 1] = markets.get(i);
+            args[i + 2] = markets.get(i);
         }
 
         // 가격은 순위 스냅샷(10초 갱신·폴백 有) 우선, 순위에 없으면 stock_price_snapshot으로 폴백
@@ -224,6 +225,7 @@ public class MarketDataRepository {
                 left join stock_price_snapshot p on p.stock_code = s.code
                 left join market_ranking_snapshot r on r.stock_code = s.code and r.ranking_type = 'HTS_TOP_VIEW'
                 where w.member_id = ?
+                  and w.contest_id = ?
                   and s.status = 'ACTIVE'
                   and s.market in (%s)
                 order by w.created_at desc, s.code asc
@@ -334,41 +336,41 @@ public class MarketDataRepository {
         return count != null && count > 0;
     }
 
-    public boolean existsWatchlist(Long memberId, String stockCode) {
+    public boolean existsWatchlist(Long memberId, String stockCode, long contestId) {
         Long count = jdbcTemplate.queryForObject("""
                 select count(*)
                 from watchlist w
                 join stock s on s.id = w.stock_id
-                where w.member_id = ? and s.code = ?
-                """, Long.class, memberId, stockCode);
+                where w.member_id = ? and w.contest_id = ? and s.code = ?
+                """, Long.class, memberId, contestId, stockCode);
         return count != null && count > 0;
     }
 
-    public int countWatchlist(Long memberId) {
+    public int countWatchlist(Long memberId, long contestId) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*)
                 from watchlist
-                where member_id = ?
-                """, Integer.class, memberId);
+                where member_id = ? and contest_id = ?
+                """, Integer.class, memberId, contestId);
         return count == null ? 0 : count;
     }
 
-    public int insertWatchlist(Long memberId, String stockCode) {
+    public int insertWatchlist(Long memberId, String stockCode, long contestId) {
         return jdbcTemplate.update("""
-                insert into watchlist (member_id, stock_id, created_at)
-                select ?, s.id, current_timestamp
+                insert into watchlist (member_id, contest_id, stock_id, created_at)
+                select ?, ?, s.id, current_timestamp
                 from stock s
                 where s.code = ? and s.status = 'ACTIVE'
-                """, memberId, stockCode);
+                """, memberId, contestId, stockCode);
     }
 
-    public int deleteWatchlist(Long memberId, String stockCode) {
+    public int deleteWatchlist(Long memberId, String stockCode, long contestId) {
         return jdbcTemplate.update("""
                 delete w
                 from watchlist w
                 join stock s on s.id = w.stock_id
-                where w.member_id = ? and s.code = ?
-                """, memberId, stockCode);
+                where w.member_id = ? and w.contest_id = ? and s.code = ?
+                """, memberId, contestId, stockCode);
     }
 
     private <T> Optional<T> queryOne(String sql, org.springframework.jdbc.core.RowMapper<T> rowMapper, Object... args) {
