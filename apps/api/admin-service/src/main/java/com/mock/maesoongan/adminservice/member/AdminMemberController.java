@@ -147,6 +147,15 @@ public class AdminMemberController {
         return ApiResponse.success(adminMemberService.releaseSuspension(suspensionId, request));
     }
 
+    @Operation(summary = "Release member suspension by memberId (이름 입력 기반 해제)")
+    @PatchMapping("/{memberId}/suspensions/release")
+    public ApiResponse<ReleaseSuspensionResponse> releaseSuspensionByMember(
+            @PathVariable long memberId,
+            @Valid @RequestBody ReleaseSuspensionRequest request
+    ) {
+        return ApiResponse.success(adminMemberService.releaseSuspensionByMember(memberId, request));
+    }
+
     @Operation(summary = "Get seed money payment summary cards")
     @GetMapping("/seed-payments/summary")
     public ApiResponse<SeedPaymentSummaryResponse> getSeedPaymentSummary() {

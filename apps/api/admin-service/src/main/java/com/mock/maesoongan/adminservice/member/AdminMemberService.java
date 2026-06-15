@@ -449,6 +449,34 @@ public class AdminMemberService {
         );
     }
 
+    // 이름(닉네임/이메일) 입력 기반 해제: suspensionId 없이 memberId로 활성 정지를 해제 요청한다.
+    @Transactional
+    public ReleaseSuspensionResponse releaseSuspensionByMember(long memberId, ReleaseSuspensionRequest request) {
+        MemberStatus member = findMemberStatus(memberId);
+        if (member == null) {
+            throw notFound("Member not found");
+        }
+        long active = count(
+                "select count(*) from account_suspension where member_id = ? and status <> 'RELEASED'",
+                memberId);
+        if (active == 0) {
+            throw badRequest("활성 정지가 없는 회원입니다");
+        }
+
+        long adminId = currentAdminId();
+        // AWS DB 직접 변경 없이 온프렘에 해제 명령 발행 (실제 확정은 LOCK_RELEASED 이벤트 수신 시).
+        memberSecurityService.requestRelease(memberId, adminId, request.reason());
+
+        insertAudit(adminId, "RELEASE_MEMBER", "MEMBER", memberId, request.reason());
+        return new ReleaseSuspensionResponse(
+                0L,
+                memberId,
+                "RELEASE_REQUESTED",
+                "SUSPENDED",
+                "정지 해제를 요청했습니다. 처리 완료 후 반영됩니다."
+        );
+    }
+
     @Transactional(readOnly = true)
     public String exportSuspensions(String keyword, String status, LocalDate startDate, LocalDate endDate) {
         HistoryFilter filter = suspensionFilter(keyword, status, startDate, endDate);
