@@ -235,10 +235,10 @@ public class AdminSystemService {
                 jdbcTemplate.update("""
                         insert into notification
                             (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
-                        select m.member_id, 'MAINTENANCE', '서비스 점검 안내', ?, 0, null, null, 'CREATED', 0, now()
+                        select m.member_id, 'MAINTENANCE', '서비스 점검 안내', ?, 0, null, null, 'CREATED', 0, ?
                         from member_snapshot m
                         where m.status = 'ACTIVE'
-                        """, message);
+                        """, message, LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")));
             } catch (RuntimeException ignored) {
                 // 알림 실패가 점검 모드 전환을 막지 않도록 무시
             }
