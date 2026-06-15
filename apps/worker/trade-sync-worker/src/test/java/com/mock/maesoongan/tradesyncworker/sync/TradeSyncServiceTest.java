@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.AccountEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderCancelResultEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
@@ -13,6 +14,7 @@ import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.TradeSyncRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -22,6 +24,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,6 +44,7 @@ class TradeSyncServiceTest {
     private JdbcTemplate jdbcTemplate;
     private PlatformTransactionManager transactionManager;
     private NotificationClient notificationClient;
+    private StringRedisTemplate redisTemplate;
     private TradeSyncService tradeSyncService;
 
     @BeforeEach
@@ -48,10 +52,11 @@ class TradeSyncServiceTest {
         jdbcTemplate = mock(JdbcTemplate.class);
         transactionManager = mock(PlatformTransactionManager.class);
         notificationClient = mock(NotificationClient.class);
+        redisTemplate = mock(StringRedisTemplate.class);
         ObjectMapper objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        tradeSyncService = new TradeSyncService(jdbcTemplate, transactionManager, notificationClient, objectMapper);
+        tradeSyncService = new TradeSyncService(jdbcTemplate, transactionManager, notificationClient, objectMapper, redisTemplate);
         when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(new SimpleTransactionStatus());
     }
 
@@ -215,6 +220,67 @@ class TradeSyncServiceTest {
                 eq(1L),
                 eq(LocalDateTime.of(2026, 6, 14, 16, 1))
         );
+    }
+
+    @Test
+    void syncOrderCancelResultUpdatesSnapshotsAndEvictsReservationCache() throws Exception {
+        mockUnprocessedEvent();
+        mockOrderReference();
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncResult result = tradeSyncService.syncOrderCancelResult(new OrderCancelResultEvent(
+                "ORDER_CANCEL_CONFIRMED",
+                "order-cancel-confirmed:5001",
+                5001L,
+                1001L,
+                "005930",
+                "Samsung",
+                "BUY",
+                "LIMIT",
+                new BigDecimal("75400"),
+                10,
+                0,
+                10,
+                new BigDecimal("754000"),
+                new BigDecimal("10000000"),
+                new BigDecimal("10000000"),
+                "CANCELED",
+                null,
+                LocalDateTime.of(2026, 6, 11, 10, 3)
+        ));
+
+        assertThat(result.processStatus()).isEqualTo("SUCCESS");
+        assertThat(result.eventId()).isEqualTo("order-cancel-confirmed:5001");
+        verify(jdbcTemplate).update(
+                contains("update order_snapshot"),
+                eq(0),
+                eq("CANCELED"),
+                eq(null),
+                eq(LocalDateTime.of(2026, 6, 11, 10, 3)),
+                eq(5001L)
+        );
+        verify(jdbcTemplate).update(
+                contains("insert into portfolio_snapshot"),
+                eq(7L),
+                eq(3L),
+                eq(1001L),
+                eq(new BigDecimal("10000000")),
+                eq(new BigDecimal("10000000")),
+                eq(BigDecimal.ZERO),
+                eq(new BigDecimal("10000000")),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq("[]"),
+                eq(1L),
+                eq(LocalDateTime.of(2026, 6, 11, 10, 3))
+        );
+        verify(redisTemplate).delete(List.of(
+                "balance:7:3",
+                "balance:pending-release:7:3",
+                "cancel:pending:5001"
+        ));
     }
 
     @Test

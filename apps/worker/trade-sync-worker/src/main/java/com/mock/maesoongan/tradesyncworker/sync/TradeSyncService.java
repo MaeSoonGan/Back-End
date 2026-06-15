@@ -6,12 +6,14 @@ import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.AccountEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderSyncRequest;
+import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.OrderCancelResultEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.PortfolioSyncRequest;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberCommandPayload;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.MemberCommandResultEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.SyncResult;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.TradeSyncRequest;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -31,17 +33,20 @@ public class TradeSyncService {
     private final TransactionTemplate transactionTemplate;
     private final NotificationClient notificationClient;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate redisTemplate;
 
     public TradeSyncService(
             JdbcTemplate jdbcTemplate,
             PlatformTransactionManager transactionManager,
             NotificationClient notificationClient,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            StringRedisTemplate redisTemplate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.notificationClient = notificationClient;
         this.objectMapper = objectMapper;
+        this.redisTemplate = redisTemplate;
     }
 
     public SyncResult syncOrder(OrderSyncRequest request) {
@@ -119,6 +124,27 @@ public class TradeSyncService {
             notifyTradeFilled(request);
         }
         return result;
+    }
+
+    public SyncResult syncOrderCancelResult(OrderCancelResultEvent event) {
+        String eventType = normalize(event.eventType());
+        if (!"ORDER_CANCEL_CONFIRMED".equals(eventType) && !"ORDER_CANCEL_REJECTED".equals(eventType)) {
+            throw new IllegalArgumentException("Unsupported order cancel result eventType: " + event.eventType());
+        }
+
+        return processEvent(
+                event.eventId(),
+                event.eventType(),
+                "ORDER",
+                String.valueOf(event.orderId()),
+                () -> {
+                    OrderReference order = findOrderReference(event.orderId())
+                            .orElseThrow(() -> new IllegalArgumentException("order_snapshot not found for orderId=" + event.orderId()));
+                    updateOrderByCancelResult(event, eventType);
+                    updatePortfolioCashByCancelResult(event, order);
+                    evictReservationCache(order.memberId(), defaultContestId(order.contestId()), event.orderId());
+                }
+        );
     }
 
     private TradeSyncRequest toTradeSyncRequest(ExecutionConfirmedEvent event) {
@@ -627,6 +653,106 @@ public class TradeSyncService {
         );
     }
 
+    private void updateOrderByCancelResult(OrderCancelResultEvent event, String eventType) {
+        jdbcTemplate.update("""
+                update order_snapshot
+                set remaining_quantity = coalesce(?, remaining_quantity),
+                    status = ?,
+                    reject_reason = ?,
+                    updated_at = ?,
+                    synced_at = current_timestamp
+                where order_id = ?
+                """,
+                event.remainingQuantity(),
+                cancelStatus(event, eventType),
+                event.reason(),
+                event.confirmedAt() == null ? LocalDateTime.now() : event.confirmedAt(),
+                event.orderId()
+        );
+    }
+
+    private String cancelStatus(OrderCancelResultEvent event, String eventType) {
+        if ("ORDER_CANCEL_REJECTED".equals(eventType)) {
+            return "CANCEL_FAILED";
+        }
+        String status = normalize(event.status());
+        if ("CANCELLED".equals(status)) {
+            return "CANCELED";
+        }
+        if ("CANCELED".equals(status)) {
+            return status;
+        }
+        return "CANCELED";
+    }
+
+    private void updatePortfolioCashByCancelResult(OrderCancelResultEvent event, OrderReference order) {
+        long contestId = defaultContestId(order.contestId());
+        PortfolioSnapshotState current = findPortfolioSnapshot(order.memberId(), contestId)
+                .orElse(PortfolioSnapshotState.empty());
+        BigDecimal cashBalance = nonNull(event.updatedDeposit(), current.cashBalance());
+        BigDecimal availableCash = nonNull(event.updatedAvailableBalance(), current.availableCash());
+        BigDecimal stockEvaluationAmount = value(current.stockEvaluationAmount());
+        BigDecimal totalAsset = cashBalance.add(stockEvaluationAmount);
+        Long portfolioVersion = current.portfolioVersion() == null ? 1L : current.portfolioVersion() + 1L;
+
+        jdbcTemplate.update("""
+                insert into portfolio_snapshot (
+                    member_id,
+                    contest_id,
+                    account_id,
+                    cash_balance,
+                    available_cash,
+                    stock_evaluation_amount,
+                    total_asset,
+                    total_buy_amount,
+                    total_sell_amount,
+                    profit_amount,
+                    profit_rate,
+                    holdings_json,
+                    portfolio_version,
+                    onprem_updated_at,
+                    synced_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+                on duplicate key update
+                    account_id = coalesce(values(account_id), account_id),
+                    cash_balance = values(cash_balance),
+                    available_cash = values(available_cash),
+                    stock_evaluation_amount = values(stock_evaluation_amount),
+                    total_asset = values(total_asset),
+                    total_buy_amount = values(total_buy_amount),
+                    total_sell_amount = values(total_sell_amount),
+                    profit_amount = values(profit_amount),
+                    profit_rate = values(profit_rate),
+                    portfolio_version = values(portfolio_version),
+                    onprem_updated_at = values(onprem_updated_at),
+                    synced_at = current_timestamp
+                """,
+                order.memberId(),
+                contestId,
+                event.accountId(),
+                cashBalance,
+                availableCash,
+                stockEvaluationAmount,
+                totalAsset,
+                value(current.totalBuyAmount()),
+                value(current.totalSellAmount()),
+                value(current.profitAmount()),
+                value(current.profitRate()),
+                current.holdingsJson() == null ? "[]" : current.holdingsJson(),
+                portfolioVersion,
+                event.confirmedAt() == null ? LocalDateTime.now() : event.confirmedAt()
+        );
+    }
+
+    private void evictReservationCache(long memberId, long contestId, long orderId) {
+        redisTemplate.delete(List.of(
+                balanceKey(memberId, contestId),
+                pendingReleaseKey(memberId, contestId),
+                cancelPendingKey(orderId)
+        ));
+    }
+
     private void upsertPortfolioSnapshot(PortfolioSyncRequest request) {
         upsertPortfolioSnapshot(request, null);
     }
@@ -863,6 +989,18 @@ public class TradeSyncService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private String balanceKey(long memberId, long contestId) {
+        return "balance:" + memberId + ":" + contestId;
+    }
+
+    private String pendingReleaseKey(long memberId, long contestId) {
+        return "balance:pending-release:" + memberId + ":" + contestId;
+    }
+
+    private String cancelPendingKey(long orderId) {
+        return "cancel:pending:" + orderId;
     }
 
     private LocalDateTime eventTime(MemberCommandResultEvent event) {

@@ -241,6 +241,33 @@ public final class SyncDtos {
         }
     }
 
+    @Schema(description = "Order cancel result event from on-premise ledger service")
+    public record OrderCancelResultEvent(
+            @NotBlank(message = "eventType is required")
+            String eventType,
+            @NotBlank(message = "eventId is required")
+            String eventId,
+            @NotNull(message = "orderId is required")
+            Long orderId,
+            Long accountId,
+            String stockCode,
+            String stockName,
+            String side,
+            String orderType,
+            BigDecimal orderPrice,
+            Integer orderQuantity,
+            Integer remainingQuantity,
+            Integer canceledQuantity,
+            BigDecimal releasedAmount,
+            BigDecimal updatedDeposit,
+            BigDecimal updatedAvailableBalance,
+            @NotBlank(message = "status is required")
+            String status,
+            String reason,
+            LocalDateTime confirmedAt
+    ) {
+    }
+
     @Schema(description = "Sync processing result")
     public record SyncResult(
             String eventId,
