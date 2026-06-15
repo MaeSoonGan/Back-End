@@ -26,6 +26,10 @@ data:
   ORDER_CANCEL_REQUESTED_TOPIC: order-cancel-requested
   MEMBER_COMMAND_RESULT_TOPIC: member.command.result
   KAFKA_SEND_TIMEOUT: 3s
+  # admin-service member.security.event consumer: 새 그룹+earliest로 과거 보안이벤트(비정상탐지/정지)까지 1회 백필.
+  # handleEvent는 멱등이라 재생해도 중복 없음. (admin-service만 읽는 변수)
+  ADMIN_KAFKA_GROUP_ID: admin-service-member-security-v2
+  ADMIN_KAFKA_AUTO_OFFSET_RESET: earliest
   ORDER_CANCEL_PENDING_TTL: 30s
   ONPREM_MEMBER_SIGNUP_PATH: /api/members/signup
   ONPREM_MEMBER_LOGIN_PATH: /api/members/login/verify
