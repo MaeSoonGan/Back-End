@@ -57,12 +57,13 @@ public class ContestNotificationScheduler {
             jdbcTemplate.update("""
                     insert into notification
                         (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
-                    select p.member_id, 'CONTEST_START', '대회 시작 예정', ?, 0, 'CONTEST', ?, 'CREATED', 0, now()
+                    select p.member_id, 'CONTEST_START', '대회 시작 예정', ?, 0, 'CONTEST', ?, 'CREATED', 0, ?
                     from contest_participation p
                     left join notification_setting s on s.member_id = p.member_id
                     where p.contest_id = ? and p.status = 'ACTIVE'
                       and coalesce(s.contest_start, 1) = 1
-                    """, (title == null ? "참여 중인 대회" : title) + " 대회가 30분 후 시작됩니다", contestId, contestId);
+                    """, (title == null ? "참여 중인 대회" : title) + " 대회가 30분 후 시작됩니다",
+                    contestId, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")), contestId);
         }
     }
 
@@ -85,12 +86,13 @@ public class ContestNotificationScheduler {
             jdbcTemplate.update("""
                     insert into notification
                         (member_id, type, title, body, is_read, target_type, target_id, delivery_status, retry_count, created_at)
-                    select p.member_id, 'CONTEST_END', '대회 종료 예정', ?, 0, 'CONTEST', ?, 'CREATED', 0, now()
+                    select p.member_id, 'CONTEST_END', '대회 종료 예정', ?, 0, 'CONTEST', ?, 'CREATED', 0, ?
                     from contest_participation p
                     left join notification_setting s on s.member_id = p.member_id
                     where p.contest_id = ? and p.status = 'ACTIVE'
                       and coalesce(s.contest_end, 1) = 1
-                    """, (title == null ? "참여한 대회" : title) + " 대회가 30분 후 종료됩니다", contestId, contestId);
+                    """, (title == null ? "참여한 대회" : title) + " 대회가 30분 후 종료됩니다",
+                    contestId, java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")), contestId);
         }
     }
 }

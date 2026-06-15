@@ -78,7 +78,7 @@ public class Notification {
         notification.read = false;
         notification.deliveryStatus = "CREATED";
         notification.retryCount = 0;
-        notification.createdAt = LocalDateTime.now();
+        notification.createdAt = LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul"));
         return notification;
     }
 
