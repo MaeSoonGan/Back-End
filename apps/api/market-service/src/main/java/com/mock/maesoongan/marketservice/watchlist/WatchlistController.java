@@ -35,21 +35,28 @@ public class WatchlistController {
     @Operation(summary = "Get watchlist")
     @GetMapping
     public ApiResponse<WatchlistResponse> getWatchlist(
-            @RequestParam(defaultValue = "domestic") String market
+            @RequestParam(defaultValue = "domestic") String market,
+            @RequestParam(defaultValue = "0") long contestId
     ) {
-        return ApiResponse.success(watchlistService.getWatchlist(currentMemberProvider.memberId(), market));
+        return ApiResponse.success(watchlistService.getWatchlist(currentMemberProvider.memberId(), market, contestId));
     }
 
     @Operation(summary = "Add stock to watchlist")
     @PostMapping("/{stockCode}")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<AddWatchlistResponse> addWatchlist(@PathVariable String stockCode) {
-        return ApiResponse.success(watchlistService.addWatchlist(currentMemberProvider.memberId(), stockCode));
+    public ApiResponse<AddWatchlistResponse> addWatchlist(
+            @PathVariable String stockCode,
+            @RequestParam(defaultValue = "0") long contestId
+    ) {
+        return ApiResponse.success(watchlistService.addWatchlist(currentMemberProvider.memberId(), stockCode, contestId));
     }
 
     @Operation(summary = "Delete stock from watchlist")
     @DeleteMapping("/{stockCode}")
-    public ApiResponse<DeleteWatchlistResponse> deleteWatchlist(@PathVariable String stockCode) {
-        return ApiResponse.success(watchlistService.deleteWatchlist(currentMemberProvider.memberId(), stockCode));
+    public ApiResponse<DeleteWatchlistResponse> deleteWatchlist(
+            @PathVariable String stockCode,
+            @RequestParam(defaultValue = "0") long contestId
+    ) {
+        return ApiResponse.success(watchlistService.deleteWatchlist(currentMemberProvider.memberId(), stockCode, contestId));
     }
 }

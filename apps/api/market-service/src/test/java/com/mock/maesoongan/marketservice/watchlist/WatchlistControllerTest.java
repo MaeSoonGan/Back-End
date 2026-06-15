@@ -41,7 +41,7 @@ class WatchlistControllerTest {
     @Test
     void getWatchlistReturnsMemberWatchlist() throws Exception {
         when(currentMemberProvider.memberId()).thenReturn(7L);
-        when(watchlistService.getWatchlist(7L, "domestic")).thenReturn(new WatchlistResponse(
+        when(watchlistService.getWatchlist(7L, "domestic", 0L)).thenReturn(new WatchlistResponse(
                 1,
                 List.of(new WatchlistItem(
                         "005930",
@@ -59,13 +59,13 @@ class WatchlistControllerTest {
                 .andExpect(jsonPath("$.data.totalCount").value(1))
                 .andExpect(jsonPath("$.data.items[0].code").value("005930"));
 
-        verify(watchlistService).getWatchlist(7L, "domestic");
+        verify(watchlistService).getWatchlist(7L, "domestic", 0L);
     }
 
     @Test
     void addWatchlistReturnsCreated() throws Exception {
         when(currentMemberProvider.memberId()).thenReturn(7L);
-        when(watchlistService.addWatchlist(7L, "005930")).thenReturn(new AddWatchlistResponse("005930", 13));
+        when(watchlistService.addWatchlist(7L, "005930", 0L)).thenReturn(new AddWatchlistResponse("005930", 13));
 
         mockMvc.perform(post("/api/watchlist/005930"))
                 .andExpect(status().isCreated())
@@ -73,19 +73,19 @@ class WatchlistControllerTest {
                 .andExpect(jsonPath("$.data.stockCode").value("005930"))
                 .andExpect(jsonPath("$.data.totalCount").value(13));
 
-        verify(watchlistService).addWatchlist(7L, "005930");
+        verify(watchlistService).addWatchlist(7L, "005930", 0L);
     }
 
     @Test
     void deleteWatchlistReturnsRemainingCount() throws Exception {
         when(currentMemberProvider.memberId()).thenReturn(7L);
-        when(watchlistService.deleteWatchlist(7L, "005930")).thenReturn(new DeleteWatchlistResponse(12));
+        when(watchlistService.deleteWatchlist(7L, "005930", 0L)).thenReturn(new DeleteWatchlistResponse(12));
 
         mockMvc.perform(delete("/api/watchlist/005930"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.totalCount").value(12));
 
-        verify(watchlistService).deleteWatchlist(7L, "005930");
+        verify(watchlistService).deleteWatchlist(7L, "005930", 0L);
     }
 }

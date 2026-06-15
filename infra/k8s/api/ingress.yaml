@@ -29,6 +29,13 @@ spec:
     - host: www.maesoongan.xyz
       http:
         paths:
+          - path: /ws/market
+            pathType: Prefix
+            backend:
+              service:
+                name: market-realtime-service
+                port:
+                  number: 8087
           - path: /api/market/price
             pathType: Prefix
             backend:

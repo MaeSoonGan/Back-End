@@ -25,9 +25,9 @@ public class WatchlistService {
     }
 
     @Transactional(readOnly = true)
-    public WatchlistResponse getWatchlist(Long memberId, String market) {
+    public WatchlistResponse getWatchlist(Long memberId, String market, long contestId) {
         List<String> markets = marketsByTab(market);
-        List<WatchlistItem> items = marketDataRepository.findWatchlistStocks(memberId, markets)
+        List<WatchlistItem> items = marketDataRepository.findWatchlistStocks(memberId, markets, contestId)
                 .stream()
                 .map(row -> new WatchlistItem(
                         row.code(),
@@ -43,31 +43,31 @@ public class WatchlistService {
     }
 
     @Transactional
-    public AddWatchlistResponse addWatchlist(Long memberId, String stockCode) {
+    public AddWatchlistResponse addWatchlist(Long memberId, String stockCode, long contestId) {
         String normalizedCode = normalizeCode(stockCode);
         if (!marketDataRepository.existsActiveStock(normalizedCode)) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Stock not found");
         }
-        if (marketDataRepository.existsWatchlist(memberId, normalizedCode)) {
+        if (marketDataRepository.existsWatchlist(memberId, normalizedCode, contestId)) {
             throw new BusinessException(HttpStatus.CONFLICT, "CONFLICT", "Stock already exists in watchlist");
         }
-        if (marketDataRepository.countWatchlist(memberId) >= WATCHLIST_LIMIT) {
+        if (marketDataRepository.countWatchlist(memberId, contestId) >= WATCHLIST_LIMIT) {
             throw new BusinessException(HttpStatus.CONFLICT, "CONFLICT", "Watchlist limit exceeded");
         }
 
-        marketDataRepository.insertWatchlist(memberId, normalizedCode);
-        return new AddWatchlistResponse(normalizedCode, marketDataRepository.countWatchlist(memberId));
+        marketDataRepository.insertWatchlist(memberId, normalizedCode, contestId);
+        return new AddWatchlistResponse(normalizedCode, marketDataRepository.countWatchlist(memberId, contestId));
     }
 
     @Transactional
-    public DeleteWatchlistResponse deleteWatchlist(Long memberId, String stockCode) {
+    public DeleteWatchlistResponse deleteWatchlist(Long memberId, String stockCode, long contestId) {
         String normalizedCode = normalizeCode(stockCode);
-        if (!marketDataRepository.existsWatchlist(memberId, normalizedCode)) {
+        if (!marketDataRepository.existsWatchlist(memberId, normalizedCode, contestId)) {
             throw new BusinessException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Watchlist stock not found");
         }
 
-        marketDataRepository.deleteWatchlist(memberId, normalizedCode);
-        return new DeleteWatchlistResponse(marketDataRepository.countWatchlist(memberId));
+        marketDataRepository.deleteWatchlist(memberId, normalizedCode, contestId);
+        return new DeleteWatchlistResponse(marketDataRepository.countWatchlist(memberId, contestId));
     }
 
     private List<String> marketsByTab(String market) {

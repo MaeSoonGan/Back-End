@@ -33,78 +33,78 @@ class WatchlistServiceTest {
 
     @Test
     void getWatchlistReturnsDomesticStocks() {
-        when(marketDataRepository.findWatchlistStocks(7L, List.of("KOSPI", "KOSDAQ"))).thenReturn(List.of(
-                new WatchlistStockRow("005930", "\uC0BC\uC131\uC804\uC790", "KOSPI", bd("75400"), bd("1200"), bd("1.62"))
+        when(marketDataRepository.findWatchlistStocks(7L, List.of("KOSPI", "KOSDAQ"), 0L)).thenReturn(List.of(
+                new WatchlistStockRow("005930", "삼성전자", "KOSPI", bd("75400"), bd("1200"), bd("1.62"))
         ));
 
-        WatchlistResponse response = watchlistService.getWatchlist(7L, "domestic");
+        WatchlistResponse response = watchlistService.getWatchlist(7L, "domestic", 0L);
 
         assertThat(response.totalCount()).isEqualTo(1);
         assertThat(response.items().get(0).code()).isEqualTo("005930");
-        verify(marketDataRepository).findWatchlistStocks(7L, List.of("KOSPI", "KOSDAQ"));
+        verify(marketDataRepository).findWatchlistStocks(7L, List.of("KOSPI", "KOSDAQ"), 0L);
     }
 
     @Test
     void addWatchlistInsertsStockAndReturnsTotalCount() {
         when(marketDataRepository.existsActiveStock("005930")).thenReturn(true);
-        when(marketDataRepository.existsWatchlist(7L, "005930")).thenReturn(false);
-        when(marketDataRepository.countWatchlist(7L)).thenReturn(12, 13);
+        when(marketDataRepository.existsWatchlist(7L, "005930", 0L)).thenReturn(false);
+        when(marketDataRepository.countWatchlist(7L, 0L)).thenReturn(12, 13);
 
-        AddWatchlistResponse response = watchlistService.addWatchlist(7L, " 005930 ");
+        AddWatchlistResponse response = watchlistService.addWatchlist(7L, " 005930 ", 0L);
 
         assertThat(response.stockCode()).isEqualTo("005930");
         assertThat(response.totalCount()).isEqualTo(13);
-        verify(marketDataRepository).insertWatchlist(7L, "005930");
+        verify(marketDataRepository).insertWatchlist(7L, "005930", 0L);
     }
 
     @Test
     void addWatchlistThrowsConflictWhenStockAlreadyExists() {
         when(marketDataRepository.existsActiveStock("005930")).thenReturn(true);
-        when(marketDataRepository.existsWatchlist(7L, "005930")).thenReturn(true);
+        when(marketDataRepository.existsWatchlist(7L, "005930", 0L)).thenReturn(true);
 
-        assertThatThrownBy(() -> watchlistService.addWatchlist(7L, "005930"))
+        assertThatThrownBy(() -> watchlistService.addWatchlist(7L, "005930", 0L))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.status()).isEqualTo(HttpStatus.CONFLICT));
 
-        verify(marketDataRepository, never()).insertWatchlist(7L, "005930");
+        verify(marketDataRepository, never()).insertWatchlist(7L, "005930", 0L);
     }
 
     @Test
     void addWatchlistThrowsConflictWhenLimitExceeded() {
         when(marketDataRepository.existsActiveStock("005930")).thenReturn(true);
-        when(marketDataRepository.existsWatchlist(7L, "005930")).thenReturn(false);
-        when(marketDataRepository.countWatchlist(7L)).thenReturn(30);
+        when(marketDataRepository.existsWatchlist(7L, "005930", 0L)).thenReturn(false);
+        when(marketDataRepository.countWatchlist(7L, 0L)).thenReturn(30);
 
-        assertThatThrownBy(() -> watchlistService.addWatchlist(7L, "005930"))
+        assertThatThrownBy(() -> watchlistService.addWatchlist(7L, "005930", 0L))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.status()).isEqualTo(HttpStatus.CONFLICT));
 
-        verify(marketDataRepository, never()).insertWatchlist(7L, "005930");
+        verify(marketDataRepository, never()).insertWatchlist(7L, "005930", 0L);
     }
 
     @Test
     void deleteWatchlistRemovesStockAndReturnsTotalCount() {
-        when(marketDataRepository.existsWatchlist(7L, "005930")).thenReturn(true);
-        when(marketDataRepository.countWatchlist(7L)).thenReturn(12);
+        when(marketDataRepository.existsWatchlist(7L, "005930", 0L)).thenReturn(true);
+        when(marketDataRepository.countWatchlist(7L, 0L)).thenReturn(12);
 
-        DeleteWatchlistResponse response = watchlistService.deleteWatchlist(7L, "005930");
+        DeleteWatchlistResponse response = watchlistService.deleteWatchlist(7L, "005930", 0L);
 
         assertThat(response.totalCount()).isEqualTo(12);
-        verify(marketDataRepository).deleteWatchlist(7L, "005930");
+        verify(marketDataRepository).deleteWatchlist(7L, "005930", 0L);
     }
 
     @Test
     void deleteWatchlistThrowsNotFoundWhenStockIsNotRegistered() {
-        when(marketDataRepository.existsWatchlist(7L, "005930")).thenReturn(false);
+        when(marketDataRepository.existsWatchlist(7L, "005930", 0L)).thenReturn(false);
 
-        assertThatThrownBy(() -> watchlistService.deleteWatchlist(7L, "005930"))
+        assertThatThrownBy(() -> watchlistService.deleteWatchlist(7L, "005930", 0L))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.status()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     @Test
     void getWatchlistThrowsBadRequestWhenMarketIsInvalid() {
-        assertThatThrownBy(() -> watchlistService.getWatchlist(7L, "invalid"))
+        assertThatThrownBy(() -> watchlistService.getWatchlist(7L, "invalid", 0L))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST));
     }
