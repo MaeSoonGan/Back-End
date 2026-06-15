@@ -15,6 +15,7 @@ import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MaintenanceUpdate
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MonitoringAlertItem;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.MonitoringResponse;
 import com.mock.maesoongan.adminservice.system.AdminSystemDtos.PageResponse;
+import com.mock.maesoongan.adminservice.member.MemberSecurityService;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -37,9 +38,11 @@ public class AdminSystemService {
     private static final int DEFAULT_ADMIN_ID = 1;
 
     private final JdbcTemplate jdbcTemplate;
+    private final MemberSecurityService memberSecurityService;
 
-    public AdminSystemService(JdbcTemplate jdbcTemplate) {
+    public AdminSystemService(JdbcTemplate jdbcTemplate, MemberSecurityService memberSecurityService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.memberSecurityService = memberSecurityService;
     }
 
     @Transactional(readOnly = true)
@@ -143,7 +146,6 @@ public class AdminSystemService {
     public AlertMutationResponse releaseAlert(long alertId, IgnoreAlertRequest request) {
         ensureAlertExists(alertId);
         long adminId = currentAdminId();
-        LocalDateTime now = LocalDateTime.now();
 
         List<Long> memberIds = jdbcTemplate.queryForList("""
                 select target_id from monitoring_status
@@ -153,32 +155,14 @@ public class AdminSystemService {
             throw badRequest("정지 해제는 회원 대상 알림에만 가능합니다.");
         }
         long memberId = memberIds.get(0);
+        String reason = cleanReason(request == null ? null : request.reason(), "로그인 실패 자동 정지 해제");
 
-        jdbcTemplate.update("""
-                update account_suspension
-                set status = 'RELEASED', released_at = ?, release_admin_id = ?, updated_at = ?
-                where member_id = ? and status <> 'RELEASED'
-                """, now, adminId, now, memberId);
-        jdbcTemplate.update("""
-                update member_snapshot
-                set status = 'ACTIVE', login_fail_count = 0, updated_at = ?, synced_at = ?
-                where member_id = ?
-                """, now, now, memberId);
-        jdbcTemplate.update("""
-                update dev_member_auth
-                set login_fail_count = 0, locked_until = null, updated_at = ?
-                where member_id = ?
-                """, now, memberId);
+        // AWS DB를 직접 바꾸지 않고 온프렘에 해제 명령 발행. 실제 해제(member_snapshot ACTIVE,
+        // account_suspension RELEASED, 알림 RESOLVED)는 온프렘의 LOCK_RELEASED 결과 이벤트 수신 시 확정된다.
+        memberSecurityService.requestRelease(memberId, adminId, reason);
 
-        jdbcTemplate.update("""
-                update monitoring_status
-                set status = 'RESOLVED', updated_at = ?
-                where id = ? and status_type = 'ABNORMAL_DETECTION'
-                """, now, alertId);
-
-        insertAudit(adminId, "RELEASE_ABNORMAL_MEMBER", "MEMBER", memberId,
-                cleanReason(request == null ? null : request.reason(), "로그인 실패 자동 정지 해제"));
-        return new AlertMutationResponse(alertId, "RESOLVED", "Suspension released");
+        insertAudit(adminId, "RELEASE_ABNORMAL_MEMBER", "MEMBER", memberId, reason);
+        return new AlertMutationResponse(alertId, "RELEASE_REQUESTED", "Suspension release requested");
     }
 
     @Transactional(readOnly = true)

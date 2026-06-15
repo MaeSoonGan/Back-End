@@ -279,4 +279,21 @@ public final class SyncDtos {
             LocalDateTime processedAt
     ) {
     }
+
+    @Schema(description = "On-prem member.security.event Kafka event (login lock/suspend/release)")
+    public record MemberSecurityEvent(
+            @NotBlank(message = "eventId is required")
+            String eventId,
+            @NotBlank(message = "eventType is required")
+            String eventType, // LOGIN_AUTO_SUSPENDED / ADMIN_SUSPENDED / LOCK_RELEASED / COMMAND_REJECTED
+            @NotNull(message = "memberId is required")
+            Long memberId,
+            String loginId,
+            String status, // SUSPENDED / ACTIVE (REJECTED 시 변경 전 현재 상태)
+            Integer loginFailCount,
+            String commandId, // 관리자 명령 결과/거부일 때만 채워짐 (자동정지는 null)
+            String reason,
+            String occurredAt // ISO-8601 (+09:00)
+    ) {
+    }
 }
