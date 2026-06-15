@@ -19,6 +19,7 @@ data:
   ACCOUNT_EVENT_TOPIC: account.event
   ORDER_REQUEST_TOPIC: order.request
   ORDER_CANCEL_TOPIC: order.cancel
+  ORDER_CANCEL_RESULT_TOPIC: order.cancel.result
   TRADE_SYNC_KAFKA_ENABLED: "true"
   TRADE_SYNC_EXECUTION_CONFIRMED_TOPIC: execution.confirmed
   ORDER_REQUESTED_TOPIC: order-requested
