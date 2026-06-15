@@ -108,6 +108,36 @@ public class ContestOrderController {
         return ApiResponse.success("Contest order cancel requested", response);
     }
 
+    @Operation(summary = "Request contest order cancellation")
+    @DeleteMapping("/orders/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<CancelOrderResponse> cancelOrderByDeleteAction(
+            @PathVariable long contestId,
+            @PathVariable long orderId
+    ) {
+        return cancelOrder(contestId, orderId);
+    }
+
+    @Operation(summary = "Request contest order cancellation")
+    @PostMapping("/orders/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<CancelOrderResponse> cancelOrderByPost(
+            @PathVariable long contestId,
+            @PathVariable long orderId
+    ) {
+        return cancelOrder(contestId, orderId);
+    }
+
+    @Operation(summary = "Request contest order cancellation")
+    @org.springframework.web.bind.annotation.PatchMapping("/orders/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<CancelOrderResponse> cancelOrderByPatch(
+            @PathVariable long contestId,
+            @PathVariable long orderId
+    ) {
+        return cancelOrder(contestId, orderId);
+    }
+
     @Operation(summary = "Get contest orders")
     @GetMapping("/orders")
     public ApiResponse<OrderListResponse> getOrders(

@@ -54,6 +54,27 @@ public class OrderController {
         return ApiResponse.success("주문이 취소 요청되었습니다.", response);
     }
 
+    @Operation(summary = "Request order cancellation")
+    @DeleteMapping("/orders/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<CancelOrderResponse> cancelOrderByDeleteAction(@PathVariable long orderId) {
+        return cancelOrder(orderId);
+    }
+
+    @Operation(summary = "Request order cancellation")
+    @PostMapping("/orders/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<CancelOrderResponse> cancelOrderByPost(@PathVariable long orderId) {
+        return cancelOrder(orderId);
+    }
+
+    @Operation(summary = "Request order cancellation")
+    @org.springframework.web.bind.annotation.PatchMapping("/orders/{orderId}/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<CancelOrderResponse> cancelOrderByPatch(@PathVariable long orderId) {
+        return cancelOrder(orderId);
+    }
+
     @Operation(summary = "Get orders")
     @GetMapping("/orders")
     public ApiResponse<OrderListResponse> getOrders(

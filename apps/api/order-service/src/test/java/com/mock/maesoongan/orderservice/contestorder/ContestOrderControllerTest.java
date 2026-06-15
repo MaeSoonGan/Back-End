@@ -31,6 +31,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -174,6 +175,29 @@ class ContestOrderControllerTest {
                 .andExpect(jsonPath("$.data.status", is("CANCEL_REQUESTED")));
 
         verify(orderService).cancelOrder(7L, 1001L);
+    }
+
+    @Test
+    void cancelOrderActionPathUsesExistingOrderCancellation() throws Exception {
+        when(currentMemberProvider.memberId()).thenReturn(7L);
+        when(orderService.cancelOrder(7L, 1001L)).thenReturn(new CancelOrderResponse(
+                1001L,
+                "CANCEL_REQUESTED",
+                "Cancel requested",
+                LocalDateTime.of(2026, 6, 10, 10, 5)
+        ));
+
+        mockMvc.perform(post("/api/contest-orders/contests/{contestId}/orders/{orderId}/cancel", 3L, 1001L))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.status", is("CANCEL_REQUESTED")));
+
+        mockMvc.perform(patch("/api/contest-orders/contests/{contestId}/orders/{orderId}/cancel", 3L, 1001L))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.status", is("CANCEL_REQUESTED")));
+
+        mockMvc.perform(delete("/api/contest-orders/contests/{contestId}/orders/{orderId}/cancel", 3L, 1001L))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.status", is("CANCEL_REQUESTED")));
     }
 
     @Test
