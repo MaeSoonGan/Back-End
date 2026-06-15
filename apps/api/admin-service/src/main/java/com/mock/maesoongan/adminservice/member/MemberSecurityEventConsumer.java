@@ -19,11 +19,12 @@ public class MemberSecurityEventConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(MemberSecurityEventConsumer.class);
 
-    private final ObjectMapper objectMapper;
+    // admin-service 컨텍스트에 ObjectMapper 빈이 없을 수 있어 자체 생성. 알 수 없는 필드는 무시(계약 확장 대비).
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final MemberSecurityService memberSecurityService;
 
-    public MemberSecurityEventConsumer(ObjectMapper objectMapper, MemberSecurityService memberSecurityService) {
-        this.objectMapper = objectMapper;
+    public MemberSecurityEventConsumer(MemberSecurityService memberSecurityService) {
         this.memberSecurityService = memberSecurityService;
     }
 
