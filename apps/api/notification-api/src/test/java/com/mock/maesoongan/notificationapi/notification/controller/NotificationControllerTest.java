@@ -65,7 +65,9 @@ class NotificationControllerTest {
                         "Trade complete",
                         "Order filled",
                         false,
-                        LocalDateTime.of(2026, 5, 25, 10, 0)
+                        LocalDateTime.of(2026, 5, 25, 10, 0),
+                        "ORDER",
+                        100L
                 ))
         ));
 
