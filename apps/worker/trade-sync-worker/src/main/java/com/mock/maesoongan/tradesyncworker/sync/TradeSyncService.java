@@ -1,5 +1,7 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.AccountEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
@@ -17,6 +19,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -26,15 +30,18 @@ public class TradeSyncService {
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
     private final NotificationClient notificationClient;
+    private final ObjectMapper objectMapper;
 
     public TradeSyncService(
             JdbcTemplate jdbcTemplate,
             PlatformTransactionManager transactionManager,
-            NotificationClient notificationClient
+            NotificationClient notificationClient,
+            ObjectMapper objectMapper
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.notificationClient = notificationClient;
+        this.objectMapper = objectMapper;
     }
 
     public SyncResult syncOrder(OrderSyncRequest request) {
@@ -94,13 +101,34 @@ public class TradeSyncService {
     }
 
     public SyncResult syncExecutionConfirmed(ExecutionConfirmedEvent event) {
-        return syncTrade(toTradeSyncRequest(event));
+        OrderReference order = findOrderReference(event.orderId())
+                .orElseGet(() -> fallbackOrderReference(event));
+        TradeSyncRequest request = toTradeSyncRequest(event, order);
+        SyncResult result = processEvent(
+                request.eventId(),
+                "TRADE_HISTORY_SYNC",
+                "TRADE",
+                String.valueOf(request.tradeId()),
+                () -> {
+                    upsertTradeHistory(request);
+                    updateOrderByTrade(request);
+                    upsertPortfolioSnapshot(event, request);
+                }
+        );
+        if ("SUCCESS".equals(result.processStatus())) {
+            notifyTradeFilled(request);
+        }
+        return result;
     }
 
     private TradeSyncRequest toTradeSyncRequest(ExecutionConfirmedEvent event) {
         OrderReference order = findOrderReference(event.orderId())
                 .orElseGet(() -> fallbackOrderReference(event));
 
+        return toTradeSyncRequest(event, order);
+    }
+
+    private TradeSyncRequest toTradeSyncRequest(ExecutionConfirmedEvent event, OrderReference order) {
         return new TradeSyncRequest(
                 "execution.confirmed:" + event.executionId(),
                 event.executionId(),
@@ -116,6 +144,163 @@ public class TradeSyncService {
                 event.executedAmount(),
                 event.confirmedAt()
         );
+    }
+
+    private void upsertPortfolioSnapshot(ExecutionConfirmedEvent event, TradeSyncRequest request) {
+        PortfolioSnapshotState current = findPortfolioSnapshot(request.memberId(), defaultContestId(request.contestId()))
+                .orElse(PortfolioSnapshotState.empty());
+        List<HoldingPosition> holdings = mergeHolding(current.holdingsJson(), event);
+        String holdingsJson = writeHoldingsJson(holdings);
+        BigDecimal cashBalance = nonNull(event.updatedDeposit(), current.cashBalance());
+        BigDecimal availableCash = nonNull(event.updatedAvailableBalance(), current.availableCash());
+        BigDecimal stockEvaluationAmount = calculateStockEvaluationAmount(holdings, current.stockEvaluationAmount());
+        BigDecimal totalAsset = cashBalance.add(stockEvaluationAmount);
+        Long portfolioVersion = current.portfolioVersion() == null ? 1L : current.portfolioVersion() + 1L;
+
+        jdbcTemplate.update("""
+                insert into portfolio_snapshot (
+                    member_id,
+                    contest_id,
+                    account_id,
+                    cash_balance,
+                    available_cash,
+                    stock_evaluation_amount,
+                    total_asset,
+                    total_buy_amount,
+                    total_sell_amount,
+                    profit_amount,
+                    profit_rate,
+                    holdings_json,
+                    portfolio_version,
+                    onprem_updated_at,
+                    synced_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, current_timestamp)
+                on duplicate key update
+                    account_id = coalesce(values(account_id), account_id),
+                    cash_balance = values(cash_balance),
+                    available_cash = values(available_cash),
+                    stock_evaluation_amount = values(stock_evaluation_amount),
+                    total_asset = values(total_asset),
+                    total_buy_amount = values(total_buy_amount),
+                    total_sell_amount = values(total_sell_amount),
+                    profit_amount = values(profit_amount),
+                    profit_rate = values(profit_rate),
+                    holdings_json = values(holdings_json),
+                    portfolio_version = values(portfolio_version),
+                    onprem_updated_at = values(onprem_updated_at),
+                    synced_at = current_timestamp
+                """,
+                request.memberId(),
+                defaultContestId(request.contestId()),
+                event.accountId(),
+                cashBalance,
+                availableCash,
+                stockEvaluationAmount,
+                totalAsset,
+                nonNull(current.totalBuyAmount(), stockEvaluationAmount),
+                value(current.totalSellAmount()),
+                value(current.profitAmount()),
+                value(current.profitRate()),
+                holdingsJson,
+                portfolioVersion,
+                event.confirmedAt()
+        );
+    }
+
+    private Optional<PortfolioSnapshotState> findPortfolioSnapshot(long memberId, long contestId) {
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    select cash_balance,
+                           available_cash,
+                           stock_evaluation_amount,
+                           total_buy_amount,
+                           total_sell_amount,
+                           profit_amount,
+                           profit_rate,
+                           holdings_json,
+                           portfolio_version
+                    from portfolio_snapshot
+                    where member_id = ? and contest_id = ?
+                    """, (rs, rowNum) -> new PortfolioSnapshotState(
+                    rs.getBigDecimal("cash_balance"),
+                    rs.getBigDecimal("available_cash"),
+                    rs.getBigDecimal("stock_evaluation_amount"),
+                    rs.getBigDecimal("total_buy_amount"),
+                    rs.getBigDecimal("total_sell_amount"),
+                    rs.getBigDecimal("profit_amount"),
+                    rs.getBigDecimal("profit_rate"),
+                    rs.getString("holdings_json"),
+                    rs.getObject("portfolio_version", Long.class)
+            ), memberId, contestId));
+        } catch (EmptyResultDataAccessException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private List<HoldingPosition> mergeHolding(String holdingsJson, ExecutionConfirmedEvent event) {
+        String stockCode = normalize(event.stockCode());
+        List<HoldingPosition> holdings = new ArrayList<>(parseHoldings(holdingsJson));
+        holdings.removeIf(holding -> stockCode.equals(holding.stockCode()));
+        int quantity = event.holdingQuantity() == null ? 0 : event.holdingQuantity();
+        if (quantity > 0) {
+            holdings.add(new HoldingPosition(stockCode, quantity, event.holdingAveragePrice()));
+        }
+        return holdings;
+    }
+
+    private List<HoldingPosition> parseHoldings(String holdingsJson) {
+        if (holdingsJson == null || holdingsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode root = objectMapper.readTree(holdingsJson);
+            if (!root.isArray()) {
+                return List.of();
+            }
+            List<HoldingPosition> holdings = new ArrayList<>();
+            for (JsonNode item : root) {
+                String stockCode = item.path("stockCode").asText("").trim().toUpperCase(Locale.ROOT);
+                int quantity = item.path("quantity").asInt(0);
+                BigDecimal avgPrice = decimal(item, "avgPrice")
+                        .orElseGet(() -> decimal(item, "averagePrice")
+                                .orElseGet(() -> decimal(item, "holdingAveragePrice").orElse(null)));
+                if (!stockCode.isBlank() && quantity > 0) {
+                    holdings.add(new HoldingPosition(stockCode, quantity, avgPrice));
+                }
+            }
+            return holdings;
+        } catch (Exception exception) {
+            return List.of();
+        }
+    }
+
+    private Optional<BigDecimal> decimal(JsonNode node, String fieldName) {
+        JsonNode value = node.get(fieldName);
+        if (value == null || value.isNull() || value.asText().isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(value.decimalValue());
+        } catch (RuntimeException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private String writeHoldingsJson(List<HoldingPosition> holdings) {
+        try {
+            return objectMapper.writeValueAsString(holdings);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("Failed to serialize holdings_json", exception);
+        }
+    }
+
+    private BigDecimal calculateStockEvaluationAmount(List<HoldingPosition> holdings, BigDecimal fallback) {
+        BigDecimal amount = holdings.stream()
+                .filter(holding -> holding.avgPrice() != null)
+                .map(holding -> holding.avgPrice().multiply(BigDecimal.valueOf(holding.quantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return amount.compareTo(BigDecimal.ZERO) == 0 ? value(fallback) : amount;
     }
 
     private Optional<OrderReference> findOrderReference(Long orderId) {
@@ -652,6 +837,14 @@ public class TradeSyncService {
         return contestId == null ? 0L : contestId;
     }
 
+    private BigDecimal value(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal nonNull(BigDecimal preferred, BigDecimal fallback) {
+        return preferred == null ? value(fallback) : preferred;
+    }
+
     private String normalize(String value) {
         return value == null ? null : value.trim().toUpperCase(Locale.ROOT);
     }
@@ -694,5 +887,34 @@ public class TradeSyncService {
     }
 
     private record StockReference(Long stockId, String stockCode, String stockName) {
+    }
+
+    private record PortfolioSnapshotState(
+            BigDecimal cashBalance,
+            BigDecimal availableCash,
+            BigDecimal stockEvaluationAmount,
+            BigDecimal totalBuyAmount,
+            BigDecimal totalSellAmount,
+            BigDecimal profitAmount,
+            BigDecimal profitRate,
+            String holdingsJson,
+            Long portfolioVersion
+    ) {
+        private static PortfolioSnapshotState empty() {
+            return new PortfolioSnapshotState(
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    "[]",
+                    0L
+            );
+        }
+    }
+
+    private record HoldingPosition(String stockCode, int quantity, BigDecimal avgPrice) {
     }
 }

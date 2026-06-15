@@ -1,5 +1,8 @@
 package com.mock.maesoongan.tradesyncworker.sync;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mock.maesoongan.tradesyncworker.notification.NotificationClient;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.AccountEvent;
 import com.mock.maesoongan.tradesyncworker.sync.SyncDtos.ExecutionConfirmedEvent;
@@ -45,7 +48,10 @@ class TradeSyncServiceTest {
         jdbcTemplate = mock(JdbcTemplate.class);
         transactionManager = mock(PlatformTransactionManager.class);
         notificationClient = mock(NotificationClient.class);
-        tradeSyncService = new TradeSyncService(jdbcTemplate, transactionManager, notificationClient);
+        ObjectMapper objectMapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        tradeSyncService = new TradeSyncService(jdbcTemplate, transactionManager, notificationClient, objectMapper);
         when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(new SimpleTransactionStatus());
     }
 
@@ -136,6 +142,23 @@ class TradeSyncServiceTest {
 
         assertThat(result.processStatus()).isEqualTo("SUCCESS");
         assertThat(result.aggregateId()).isEqualTo("8001");
+        verify(jdbcTemplate).update(
+                contains("insert into portfolio_snapshot"),
+                eq(7L),
+                eq(3L),
+                eq(1001L),
+                eq(new BigDecimal("9663500")),
+                eq(new BigDecimal("9663500")),
+                eq(new BigDecimal("754000")),
+                eq(new BigDecimal("10417500")),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                eq(BigDecimal.ZERO),
+                contains("\"stockCode\":\"005930\""),
+                eq(1L),
+                eq(LocalDateTime.of(2026, 6, 11, 10, 1))
+        );
         verify(notificationClient).create(eq(7L), eq("TRADE_FILLED_BUY"), anyString(), anyString(), eq("ORDER"), eq(5001L));
     }
 
