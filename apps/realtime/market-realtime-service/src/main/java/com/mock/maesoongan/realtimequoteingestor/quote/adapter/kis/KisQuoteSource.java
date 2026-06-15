@@ -54,7 +54,7 @@ public class KisQuoteSource implements QuoteSource {
     private final Set<String> subscribedIndexes = ConcurrentHashMap.newKeySet();
     // 해제 디바운스: 즉시 KIS 해제하지 않고 잠시 예약해, 새로고침 등으로 곧 재구독되면 취소(churn/MAX OVER 방지)
     private static final long UNSUBSCRIBE_DELAY_SECONDS = 5;
-    private final Map<String, ScheduledFuture<?>> pendingUnsubscribe = new ConcurrentHashMap<>();
+    private final Map<String, PendingUnsub> pendingUnsubscribe = new ConcurrentHashMap<>();
     private final Map<String, KisRealtimeParser.EncryptionContext> encryptionContexts = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -194,27 +194,55 @@ public class KisQuoteSource implements QuoteSource {
                 }));
     }
 
+    // 지연 해제 예약 항목: 타이머(future) + 실제 해제 동작(action). flush로 즉시 실행할 수 있게 action을 보관한다.
+    private record PendingUnsub(ScheduledFuture<?> future, Runnable action) {
+    }
+
     // 해제를 UNSUBSCRIBE_DELAY_SECONDS 만큼 지연 예약. 같은 키가 그 사이 재구독되면 cancelPendingUnsubscribe로 취소됨.
     private void scheduleUnsubscribe(String key, Runnable unsubscribeAction) {
         pendingUnsubscribe.compute(key, (ignored, existing) -> {
             if (existing != null) {
                 return existing; // 이미 예약돼 있으면 유지
             }
-            return reconnectExecutor.schedule(() -> {
+            ScheduledFuture<?> future = reconnectExecutor.schedule(() -> {
                 pendingUnsubscribe.remove(key);
                 unsubscribeAction.run();
             }, UNSUBSCRIBE_DELAY_SECONDS, TimeUnit.SECONDS);
+            return new PendingUnsub(future, unsubscribeAction);
         });
     }
 
     // 예약된 해제가 있으면 취소(= 계속 구독 유지). 취소했으면 true.
     private boolean cancelPendingUnsubscribe(String key) {
-        ScheduledFuture<?> pending = pendingUnsubscribe.remove(key);
+        PendingUnsub pending = pendingUnsubscribe.remove(key);
         if (pending != null) {
-            pending.cancel(false);
+            pending.future().cancel(false);
             return true;
         }
         return false;
+    }
+
+    // 대기 중(구독자 0인 idle) 해제분을 지연 없이 즉시 실행해 KIS 슬롯을 회수한다.
+    // 한도 초과(MAX SUBSCRIBE OVER) 시 전역 재연결 대신 호출 → 연결 유지한 채 슬롯만 확보.
+    private boolean flushPendingUnsubscribes() {
+        if (pendingUnsubscribe.isEmpty()) {
+            return false;
+        }
+        boolean any = false;
+        for (String key : List.copyOf(pendingUnsubscribe.keySet())) {
+            PendingUnsub pending = pendingUnsubscribe.remove(key);
+            if (pending == null) {
+                continue;
+            }
+            pending.future().cancel(false);
+            try {
+                pending.action().run();
+                any = true;
+            } catch (RuntimeException exception) {
+                log.warn("flush pending unsubscribe failed: key={}, err={}", key, exception.getMessage());
+            }
+        }
+        return any;
     }
 
     @Override
@@ -256,12 +284,19 @@ public class KisQuoteSource implements QuoteSource {
     // → connect()가 새 approval_key 발급(한도 초기화), onConnected()가 현재 ref-count 구독만 재등록.
     //   누적된 유령 등록이 사라짐. throttle(30초)로 잦은 재연결 루프를 방지한다.
     private void reconnectForSubscribeOver() {
+        // 1순위: 대기 중(구독자 0인 idle) 해제분을 즉시 실행해 슬롯만 회수한다.
+        // 연결을 유지하므로 다른 사용자/종목에 영향이 없고, 전역 복구 모달도 뜨지 않는다.
+        if (flushPendingUnsubscribes()) {
+            log.info("KIS MAX SUBSCRIBE OVER → idle 구독 즉시 해제로 슬롯 확보(재연결 생략)");
+            return;
+        }
+        // idle 해제분이 없음(모두 활성 구독자 보유) → 최후수단으로만 재연결. throttle(30초)로 루프 방지.
         long now = System.currentTimeMillis();
         if (now - lastSubscribeOverReconnectAt < SUBSCRIBE_OVER_RECONNECT_INTERVAL_MS) {
             return;
         }
         lastSubscribeOverReconnectAt = now;
-        log.warn("KIS MAX SUBSCRIBE OVER 감지 → 추적 목록 초기화 + KIS 재연결");
+        log.warn("KIS MAX SUBSCRIBE OVER + 회수할 idle 없음 → 추적 목록 초기화 + KIS 재연결");
         // 누적/유령 등록까지 비운다. 재연결 후 핸들러가 복구완료 이벤트에서 현재 활성 구독만 다시 등록
         // → 비우지 않으면 같은 초과 상태로 재등록되어 무한 MAX OVER 루프에 빠짐
         clearSubscriptions();
@@ -284,7 +319,7 @@ public class KisQuoteSource implements QuoteSource {
     }
 
     private void clearSubscriptions() {
-        pendingUnsubscribe.values().forEach(future -> future.cancel(false));
+        pendingUnsubscribe.values().forEach(pending -> pending.future().cancel(false));
         pendingUnsubscribe.clear();
         subscribedPriceCodes.clear();
         subscribedOrderbookCodes.clear();
