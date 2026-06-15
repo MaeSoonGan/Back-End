@@ -321,6 +321,12 @@ public class AdminContestService {
         return queryRankings(contestId, keyword, excluded, page, size);
     }
 
+    // 스케줄러(ContestRankingScheduler)가 진행중 대회별로 호출. 대회 1건당 독립 트랜잭션.
+    @Transactional
+    public int recalculateContestRankings(long contestId) {
+        return recalculateRankings(contestId);
+    }
+
     private int recalculateRankings(long contestId) {
         ContestBasic contest = getContestBasic(contestId);
         LocalDateTime now = LocalDateTime.now();
@@ -361,22 +367,43 @@ public class AdminContestService {
                 where r.contest_id = ?
                 """, now, contestId);
 
-        String orderBy = "AMOUNT".equals(contest.profitCriteria())
-                ? "coalesce(profit_amount, 0) desc, coalesce(total_asset, 0) desc, member_id asc"
-                : "coalesce(profit_rate, 0) desc, coalesce(total_asset, 0) desc, member_id asc";
+        // 성적 기준값(대회 기준: 수익금 or 수익률). 동점 판정에 사용한다.
+        String metricExpr = "AMOUNT".equals(contest.profitCriteria())
+                ? "coalesce(profit_amount, 0)"
+                : "coalesce(profit_rate, 0)";
+        String orderBy = metricExpr + " desc, coalesce(total_asset, 0) desc, member_id asc";
 
-        List<Long> rankingIds = jdbcTemplate.query("""
-                        select id
+        record RankRow(long id, java.math.BigDecimal metric, java.math.BigDecimal asset) {
+        }
+
+        List<RankRow> rows = jdbcTemplate.query("""
+                        select id, %s as metric, coalesce(total_asset, 0) as asset
                         from ranking
                         where contest_id = ? and is_excluded = false
                         order by %s
-                        """.formatted(orderBy),
-                (rs, rowNum) -> rs.getLong("id"),
+                        """.formatted(metricExpr, orderBy),
+                (rs, rowNum) -> new RankRow(
+                        rs.getLong("id"),
+                        rs.getBigDecimal("metric"),
+                        rs.getBigDecimal("asset")),
                 contestId);
 
-        int rank = 1;
-        for (Long rankingId : rankingIds) {
-            jdbcTemplate.update("update ranking set rank_no = ?, updated_at = ? where id = ?", rank++, now, rankingId);
+        // 공동순위(올림픽식): 성적(기준값+총자산)이 같으면 같은 등수, 다음 등수는 인원수만큼 건너뛴다.
+        // 예: 동점 1위 3명 → 1,1,1위, 그 다음은 4위. (member_id로 임의 순번 매기지 않음)
+        int position = 0;
+        int currentRank = 0;
+        java.math.BigDecimal prevMetric = null;
+        java.math.BigDecimal prevAsset = null;
+        for (RankRow row : rows) {
+            position++;
+            if (prevMetric == null
+                    || row.metric().compareTo(prevMetric) != 0
+                    || row.asset().compareTo(prevAsset) != 0) {
+                currentRank = position;
+            }
+            jdbcTemplate.update("update ranking set rank_no = ?, updated_at = ? where id = ?", currentRank, now, row.id());
+            prevMetric = row.metric();
+            prevAsset = row.asset();
         }
 
         jdbcTemplate.update("""
@@ -385,7 +412,7 @@ public class AdminContestService {
                 where contest_id = ? and is_excluded = true
                 """, now, contestId);
 
-        return rankingIds.size();
+        return rows.size();
     }
 
     @Transactional(readOnly = true)
