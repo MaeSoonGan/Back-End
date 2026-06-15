@@ -49,7 +49,16 @@ public class NotificationClient {
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
                     .build();
 
-            httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn(
+                        "Failed to create notification. status={}, type={}, memberId={}, body={}",
+                        response.statusCode(),
+                        type,
+                        memberId,
+                        truncate(response.body())
+                );
+            }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         } catch (Exception exception) {
@@ -59,5 +68,12 @@ public class NotificationClient {
 
     private String trimTrailingSlash(String url) {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    private String truncate(String value) {
+        if (value == null || value.length() <= 300) {
+            return value;
+        }
+        return value.substring(0, 300);
     }
 }

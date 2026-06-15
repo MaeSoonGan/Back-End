@@ -3,6 +3,8 @@ package com.mock.maesoongan.notificationapi.notification.service;
 import com.mock.maesoongan.notificationapi.common.BusinessException;
 import com.mock.maesoongan.notificationapi.notification.domain.Notification;
 import com.mock.maesoongan.notificationapi.notification.domain.NotificationSetting;
+import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.CreateNotificationRequest;
+import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.CreateNotificationResponse;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.NotificationListResponse;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.NotificationSettingsResponse;
 import com.mock.maesoongan.notificationapi.notification.dto.NotificationDtos.ReadAllNotificationsResponse;
@@ -84,6 +86,8 @@ class NotificationServiceTest {
     void getSettingsReturnsDefaultValuesWhenSettingDoesNotExist() {
         Long memberId = 1L;
         when(notificationSettingRepository.findByMemberId(memberId)).thenReturn(Optional.empty());
+        when(notificationSettingRepository.save(any(NotificationSetting.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         NotificationSettingsResponse response = notificationService.getSettings(memberId);
 
@@ -95,6 +99,41 @@ class NotificationServiceTest {
         assertFalse(response.rankChange());
         assertFalse(response.marketOpen());
         assertFalse(response.marketClose());
+        verify(notificationSettingRepository).save(any(NotificationSetting.class));
+    }
+
+    @Test
+    void createNotificationCreatesDefaultSettingWhenSettingDoesNotExist() {
+        Long memberId = 1L;
+        CreateNotificationRequest request = new CreateNotificationRequest(
+                memberId,
+                "TRADE_EXECUTED",
+                "Trade complete",
+                "Order filled",
+                "ORDER",
+                10L
+        );
+        Notification savedNotification = Notification.create(
+                memberId,
+                request.type(),
+                request.title(),
+                request.body(),
+                request.targetType(),
+                request.targetId()
+        );
+        ReflectionTestUtils.setField(savedNotification, "id", 20L);
+
+        when(notificationSettingRepository.findByMemberId(memberId)).thenReturn(Optional.empty());
+        when(notificationSettingRepository.save(any(NotificationSetting.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(notificationRepository.save(any(Notification.class))).thenReturn(savedNotification);
+
+        CreateNotificationResponse response = notificationService.createNotification(request);
+
+        assertTrue(response.created());
+        assertEquals(20L, response.notificationId());
+        verify(notificationSettingRepository).save(any(NotificationSetting.class));
+        verify(notificationRepository).save(any(Notification.class));
     }
 
     @Test

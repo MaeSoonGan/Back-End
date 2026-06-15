@@ -52,10 +52,9 @@ public class NotificationService {
         return new UnreadCountResponse(notificationRepository.countByMemberIdAndReadFalse(memberId));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public NotificationSettingsResponse getSettings(Long memberId) {
-        NotificationSetting setting = notificationSettingRepository.findByMemberId(memberId)
-                .orElseGet(() -> NotificationSetting.defaultFor(memberId));
+        NotificationSetting setting = getOrCreateSetting(memberId);
         return toSettingsResponse(setting);
     }
 
@@ -104,8 +103,7 @@ public class NotificationService {
     // 알림 생성: 회원의 수신 설정을 확인해 허용된 종류만 저장(설정 OFF면 skip).
     @Transactional
     public CreateNotificationResponse createNotification(CreateNotificationRequest request) {
-        NotificationSetting setting = notificationSettingRepository.findByMemberId(request.memberId())
-                .orElseGet(() -> NotificationSetting.defaultFor(request.memberId()));
+        NotificationSetting setting = getOrCreateSetting(request.memberId());
         if (!isAllowed(request.type(), setting)) {
             return new CreateNotificationResponse(null, false);
         }
